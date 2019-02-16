@@ -8,7 +8,7 @@ namespace Avalon.Raft.Core.Persistence
 {
     public class FileStatePersister : IStatePersister
     {
-        public static readonly string FileName = ".raft.state";
+        public static readonly string FileName = ".avalon.raft.state";
         private readonly string _filename;
 
         public FileStatePersister(string directory)
