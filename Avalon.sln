@@ -3,9 +3,35 @@ Microsoft Visual Studio Solution File, Format Version 12.00
 # Visual Studio 15
 VisualStudioVersion = 15.0.28307.329
 MinimumVisualStudioVersion = 10.0.40219.1
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalon.Raft.Core", "src\Avalon.Raft.Core\Avalon.Raft.Core.csproj", "{BA46F615-8C37-401C-891F-3EBBF3B87205}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{3E037445-D8AB-4BB7-9B9D-C699D8ECA33C}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "test", "test", "{7EAC24AB-427C-4CBE-B62C-FA0D00C2026B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalon.Raft.Core.Tests", "test\Avalon.Raft.Core.Tests\Avalon.Raft.Core.Tests.csproj", "{6B8C7157-A040-4508-938C-227AF9A44BAE}"
+EndProject
 Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{BA46F615-8C37-401C-891F-3EBBF3B87205}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{BA46F615-8C37-401C-891F-3EBBF3B87205}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{BA46F615-8C37-401C-891F-3EBBF3B87205}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{BA46F615-8C37-401C-891F-3EBBF3B87205}.Release|Any CPU.Build.0 = Release|Any CPU
+		{6B8C7157-A040-4508-938C-227AF9A44BAE}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{6B8C7157-A040-4508-938C-227AF9A44BAE}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{6B8C7157-A040-4508-938C-227AF9A44BAE}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{6B8C7157-A040-4508-938C-227AF9A44BAE}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{BA46F615-8C37-401C-891F-3EBBF3B87205} = {3E037445-D8AB-4BB7-9B9D-C699D8ECA33C}
+		{6B8C7157-A040-4508-938C-227AF9A44BAE} = {7EAC24AB-427C-4CBE-B62C-FA0D00C2026B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {D5A471C1-89D1-4C51-99C6-A5544F2C78A0}
