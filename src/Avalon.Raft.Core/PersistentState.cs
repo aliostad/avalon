@@ -12,7 +12,6 @@ namespace Avalon.Raft.Core
         public PersistentState()
         {
             Id = Guid.NewGuid();
-            LastVotedForId = new Guid();
             CurrentTerm = 0L;
         }
 
@@ -20,14 +19,14 @@ namespace Avalon.Raft.Core
 
         public long CurrentTerm { get; set; }
 
-        public Guid LastVotedForId { get; set; }
+        public Guid? LastVotedForId { get; set; }
 
         public byte[] ToBytes()
         {
             var bb = new List<byte>();
             bb.AddRange(Id.ToByteArray());
             bb.AddRange(BitConverter.GetBytes(CurrentTerm));
-            bb.AddRange(LastVotedForId.ToByteArray());
+            bb.AddRange(LastVotedForId.GetValueOrDefault().ToByteArray());
             return bb.ToArray();
         }
 
@@ -39,12 +38,23 @@ namespace Avalon.Raft.Core
             if (buffer.Length != 40)
                 throw new InvalidOperationException($"Buffer must be {BufferLength} but was {buffer.Length}");
 
-            return new PersistentState()
+            var state = new PersistentState()
             {
                 Id = new Guid(buffer.Take(16).ToArray()),
                 CurrentTerm = BitConverter.ToInt64(buffer, 16),
                 LastVotedForId = new Guid(buffer.Skip(16+8).ToArray())
             };
+
+            if (state.LastVotedForId == default(Guid))
+                state.LastVotedForId = null;
+
+            return state;
+        }
+
+        public void IncrementTerm()
+        {
+            CurrentTerm += 1;
+            LastVotedForId = null;
         }
     }
 }
