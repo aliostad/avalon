@@ -9,6 +9,11 @@ namespace Avalon.Raft.Core.Rpc
     {
         protected PersistentState _persistentState = new PersistentState();
         protected VolatileState _volatileState = new VolatileState();
+        protected Role _role;
+
+        public Role Role => _role;
+
+        public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
         public async Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
         {

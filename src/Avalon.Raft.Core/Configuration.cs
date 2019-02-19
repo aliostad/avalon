@@ -20,5 +20,10 @@ namespace Avalon.Raft.Core
         /// How long candidate waits for RequestVote. Probably 50-100ms
         /// </summary>
         public TimeSpan CandidacyTimeout { get; set; }
+
+        /// <summary>
+        /// In byte length. This needs to be constant in a system.
+        /// </summary>
+        public int SizeOfLogEntry { get; set; }
     }
 }

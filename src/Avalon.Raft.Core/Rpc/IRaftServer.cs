@@ -12,5 +12,19 @@ namespace Avalon.Raft.Core.Rpc
         Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request);
 
         Task<InstallUpdateResponse> InstallUpdateAsync(InstallUpdateRequest request);
+
+        Role Role { get; }
+
+        event EventHandler<RoleChangedEventArgs> RoleChanged;
+    }
+
+    public class RoleChangedEventArgs : EventArgs
+    {
+        public RoleChangedEventArgs(Role newRole)
+        {
+            NewRole = newRole;
+        }
+
+        public Role NewRole { get; }
     }
 }
