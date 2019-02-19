@@ -9,15 +9,17 @@ namespace Avalon.Raft.Core.Persistence
     {
         Task AppendAsync(LogEntry entry);
 
-        Task<LogEntry[]> GetEntriesAsync(int index, int count);
+        Task<LogEntry[]> GetEntriesAsync(long index, int count);
        
-        Task DeleteEntriesAsync(int fromIndex);
+        Task DeleteEntriesAsync(long fromIndex);
        
-        Task CompactAsync(int fromIndex);
+        Task CompactAsync(long fromIndex);
 
         /// <summary>
         /// In case of snapshotting
         /// </summary>
-        int FirstIndexOffset { get; }
+        long LogOffset { get; }
+
+        long LastIndex { get; }
     }
 }
