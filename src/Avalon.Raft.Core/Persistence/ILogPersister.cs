@@ -5,15 +5,21 @@ using System.Threading.Tasks;
 
 namespace Avalon.Raft.Core.Persistence
 {
+    /// <summary>
+    /// Manages the Raft Log file. 
+    /// 
+    /// NOTE:
+    /// This interface is intentially non-async since it is meant to used by a dedicated thread
+    /// </summary>
     public interface ILogPersister
     {
-        Task AppendAsync(LogEntry entry);
+        void Append(LogEntry[] entries);
 
-        Task<LogEntry[]> GetEntriesAsync(long index, int count);
+        LogEntry[] GetEntries(long index, int count);
        
-        Task DeleteEntriesAsync(long fromIndex);
-       
-        Task CompactAsync(long fromIndex);
+        void DeleteEntries(long fromIndex);
+
+        void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal);
 
         /// <summary>
         /// In case of snapshotting

@@ -6,4 +6,8 @@
     <Summary>Raft Core Primitives</Summary>
   </PropertyGroup>
 
+  <ItemGroup>
+    <PackageReference Include="LightningDB" Version="0.10.0" />
+  </ItemGroup>
+
 </Project>
