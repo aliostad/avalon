@@ -3,16 +3,16 @@
   <PropertyGroup>
     <TargetFrameworks>netstandard2.0;net461</TargetFrameworks>
     <TargetFrameworks Condition="'$(OS)' != 'Windows_NT'">netstandard2.0</TargetFrameworks>
-    <Summary>Raft Core Primitives</Summary>
-    <LangVersion>7.3</LangVersion>    
+    <Summary>Unsafe Helpers</Summary>
+    <LangVersion>7.3</LangVersion>  
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Spreads.LMDB" Version="1.0.0-build1811161327" />
   </ItemGroup>
 
-  <ItemGroup>
-    <ProjectReference Include="..\Avalon.Common.Unsafe\Avalon.Common.Unsafe.csproj" />
-  </ItemGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
 
 </Project>

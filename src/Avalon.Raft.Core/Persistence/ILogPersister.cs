@@ -13,7 +13,7 @@ namespace Avalon.Raft.Core.Persistence
     /// </summary>
     public interface ILogPersister
     {
-        void Append(LogEntry[] entries);
+        void Append(LogEntry[] entries, long startingOffset);
 
         LogEntry[] GetEntries(long index, int count);
        
