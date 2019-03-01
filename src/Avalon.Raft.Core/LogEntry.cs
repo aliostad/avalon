@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Text;
+using Avalon.Common;
 
 namespace Avalon.Raft.Core
 {
@@ -24,5 +25,14 @@ namespace Avalon.Raft.Core
             var entry = new LogEntry() { Body = buffer};
             return entry;
         }
+    }
+
+    public static class LogExtryExtensions
+    {
+        /*
+        public static Bufferable ToBufferWithIndex(this LogEntry entry, long index)
+        {
+            Buffer.Co
+        } */
     }
 }

@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
+using Avalon.Common;
 
 namespace Avalon.Raft.Core.Persistence
 {
@@ -19,7 +20,7 @@ namespace Avalon.Raft.Core.Persistence
 
         public class StateDbKeys
         {
-            public static readonly long LogOffset = 0L;
+            public static readonly string LogOffset = "LogOffset";
         }
 
         public class Databases
@@ -34,6 +35,7 @@ namespace Avalon.Raft.Core.Persistence
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
             _env = LMDBEnvironment.Create(directory);
+            _env.Open();
             _config = config;
             
             LoadState();
@@ -51,11 +53,11 @@ namespace Avalon.Raft.Core.Persistence
 
         private void LoadState()
         {
-            using (var tx = _env.BeginTransaction())
+            using (var tx = _env.BeginReadOnlyTransaction())
             {
                 using (var ldb = OpenLogDatabase())
                 {
-                    var c = ldb.OpenCursor(tx);
+                    var c = ldb.OpenReadOnlyCursor(tx);
                     var k = LogKey + 1; // to move to last position
                     long value;
                     if (c.TryFind(Lookup.EQ, ref k, out value))
@@ -66,12 +68,16 @@ namespace Avalon.Raft.Core.Persistence
 
                 using (var sdb = OpenStateDatabase())
                 {
-                    //sdb.get
+                    Bufferable value = default;
+                    if (tx.TryGet(sdb, StateDbKeys.LogOffset, out value))
+                    {
+                        LogOffset = value;
+                    }
                 }
             }
         }
 
-        public long LogOffset { get; set; }
+        public long LogOffset { get; set; } = 0;
 
         public long LastIndex { get; set; } = -1;
 
@@ -79,6 +85,7 @@ namespace Avalon.Raft.Core.Persistence
         {
             if (startingOffset != LastIndex + 1)
                 throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
+
         }
 
         public void DeleteEntries(long fromIndex)
@@ -98,7 +105,7 @@ namespace Avalon.Raft.Core.Persistence
 
         public void Dispose()
         {
-            _env.Dispose();
+            _env.Close();
         }
     }
 }

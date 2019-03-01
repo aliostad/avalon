@@ -53,7 +53,19 @@ namespace Avalon.Common
         {
             return b.Buffer == null || b.Buffer.Length == 0 ? default(Guid) : new Guid(b.Buffer);
         }
+    }
 
-
+    public static class BufferableExtensions
+    {
+        public static unsafe Bufferable PrefixWithIndex(this Bufferable b, long index)
+        {
+            var buffer = new byte[sizeof(long) + b.Buffer.Length];
+            fixed (byte* ptr = &b.Buffer[0], destPtr = &buffer[0])
+            {
+                Buffer.MemoryCopy(&index, destPtr, buffer.Length, sizeof(long));
+                Buffer.MemoryCopy(ptr, destPtr + sizeof(long), b.Buffer.Length, b.Buffer.Length);
+            }
+            return new Bufferable(buffer);
+        }
     }
 }
