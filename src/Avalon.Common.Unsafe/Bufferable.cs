@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Linq;
 using System.Collections.Generic;
 using System.Text;
 
@@ -9,8 +10,34 @@ namespace Avalon.Common
         private readonly byte[] _buffer; 
         public Bufferable(byte[] buffer)
         {
+            if (buffer == null)
+                throw new ArgumentNullException("buffer");
+
             _buffer = buffer;
         }
+
+        public unsafe Bufferable(params Bufferable[] bufferables)
+        {
+            if (bufferables == null || bufferables.Length == 0)
+                throw new InvalidOperationException("At least must pass one bufferable");
+
+            var lenNeeded = bufferables.Sum(x => x.Buffer.Length);
+            _buffer = new byte[lenNeeded];
+            var position = 0;
+            fixed (byte* destPtr = &_buffer[0])
+            {
+                foreach (var b in bufferables)
+                {
+                    fixed (byte* ptr = &b.Buffer[0])
+                    {
+                        System.Buffer.MemoryCopy(ptr, destPtr + position, b.Buffer.Length, b.Buffer.Length);
+                    }
+
+                    position += b.Buffer.Length;
+                }
+            }
+        }
+
 
         public byte[] Buffer => _buffer;
 

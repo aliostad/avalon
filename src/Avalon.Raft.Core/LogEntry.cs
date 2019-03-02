@@ -25,14 +25,10 @@ namespace Avalon.Raft.Core
             var entry = new LogEntry() { Body = buffer};
             return entry;
         }
-    }
 
-    public static class LogExtryExtensions
-    {
-        /*
-        public static Bufferable ToBufferWithIndex(this LogEntry entry, long index)
+        public static implicit operator Bufferable(LogEntry entry)
         {
-            Buffer.Co
-        } */
+            return new Bufferable(entry.Body);
+        }
     }
 }

@@ -3,24 +3,28 @@ using Spreads;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Text;
+using System.Linq;
 using Avalon.Common;
+using Spreads.Buffers;
 
 namespace Avalon.Raft.Core.Persistence
 {
-    public class LmdbPersister : ILogPersister, IDisposable
+    public class LmdbPersister : ILogPersister, IStatePersister, IDisposable
     {
-
         private const long LogKey = 0L;
 
         private readonly string _directory;
         private readonly LMDBEnvironment _env;
         private readonly Configuration _config;
         private readonly object _lock = new object();
+        private PersistentState _state = null;
 
         public class StateDbKeys
         {
             public static readonly string LogOffset = "LogOffset";
+            public static readonly string Id = "Id";
+            public static readonly string CurrentTerm = "CurrentTerm";
+            public static readonly string LastVotedFor = "LastVotedFor";
         }
 
         public class Databases
@@ -73,6 +77,18 @@ namespace Avalon.Raft.Core.Persistence
                     {
                         LogOffset = value;
                     }
+
+                    if (tx.TryGet(sdb, StateDbKeys.Id, out value))
+                    {
+                        _state = new PersistentState();
+                        _state.Id = value;
+
+                        if (tx.TryGet(sdb, StateDbKeys.CurrentTerm, out value)) // this should be always TRUE
+                            _state.CurrentTerm = value;
+
+                        if (tx.TryGet(sdb, StateDbKeys.LastVotedFor, out value))
+                            _state.LastVotedForId = value;
+                    }
                 }
             }
         }
@@ -83,19 +99,66 @@ namespace Avalon.Raft.Core.Persistence
 
         public void Append(LogEntry[] entries, long startingOffset)
         {
-            if (startingOffset != LastIndex + 1)
-                throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
+            lock(_lock)
+            {
+                if (startingOffset != LastIndex + 1)
+                    throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
 
+                using (var tx = _env.BeginTransaction())
+                using (var db = OpenLogDatabase())
+                {
+                    foreach (var e in entries.Zip(Enumerable.Range(0, entries.Length), (l, i) => (i, l)).Select(x => ((Bufferable)x.l).PrefixWithIndex(x.i)))
+                    {
+                        tx.Put(db, LogKey, e, TransactionPutOptions.AppendDuplicateData);
+                    }
+
+                    tx.Commit();
+
+                    this.LastIndex += entries.Length;
+                }
+            }
         }
 
         public void DeleteEntries(long fromIndex)
         {
-            throw new NotImplementedException();
+            lock (_lock)
+            {
+                using (var tx = _env.BeginTransaction())
+                using (var db = OpenLogDatabase())
+                using (var c = db.OpenCursor(tx))
+                {
+                    long key = LogKey;
+                    int i = 0;
+                    if (!c.TryFindDup(Lookup.EQ, ref key, ref fromIndex))
+                    {
+                        throw new InvalidOperationException($"Could not find index {fromIndex}");
+                    }
+
+                    while (c.Delete())
+                        i++;
+
+                    tx.Commit();
+                }
+            }
         }
 
         public LogEntry[] GetEntries(long index, int count)
         {
+            if (index + count < LastIndex)
+                throw new InvalidOperationException($"We do not have these entries. index: {index}, count: {count} and LastIndex: {LastIndex}");
+
+            var list = new List<LogEntry>();
+            using (var tx = _env.BeginReadOnlyTransaction())
+            using (var db = OpenStateDatabase())
+            {
+                for (long i = index; i < index + count; i++)
+                {
+                    //tx.TryGet()
+                }
+            }
+
             throw new NotImplementedException();
+
         }
 
         public void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal)
@@ -106,6 +169,42 @@ namespace Avalon.Raft.Core.Persistence
         public void Dispose()
         {
             _env.Close();
+        }
+
+        public void Save(PersistentState state)
+        {
+            lock (_lock) // TODO: unnecessary probably
+            {
+                using (var tx = _env.BeginTransaction())
+                using (var db = OpenStateDatabase())
+                {
+                    if (state.LastVotedForId.HasValue)
+                        tx.Put(db, StateDbKeys.LastVotedFor, state.LastVotedForId.Value);
+                    tx.Put(db, StateDbKeys.Id, state.Id);
+                    tx.Put(db, StateDbKeys.CurrentTerm, state.CurrentTerm);
+                    tx.Commit();
+                    _state = state;
+                }
+            }
+        }
+
+        public PersistentState Load()
+        {
+            return _state;
+        }
+
+        public void SaveLastVotedFor(Guid id)
+        {
+            lock (_lock) // TODO: unnecessary probably
+        {
+                using (var tx = _env.BeginTransaction())
+                using (var db = OpenStateDatabase())
+                {
+                    tx.Put(db, StateDbKeys.LastVotedFor, id);
+                    tx.Commit();
+                    _state.LastVotedForId = id;
+                }
+            }
         }
     }
 }
