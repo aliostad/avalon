@@ -153,7 +153,10 @@ namespace Avalon.Raft.Core.Persistence
             {
                 for (long i = index; i < index + count; i++)
                 {
-                    //tx.TryGet()
+                    Bufferable b = i;
+                    if (!tx.TryGetDuplicate(db, LogKey, ref b))
+                        throw new InvalidOperationException($"Could not find index {i} in the logs.");
+                    list.Add(b.Buffer);
                 }
             }
 

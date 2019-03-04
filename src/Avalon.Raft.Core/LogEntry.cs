@@ -13,7 +13,7 @@ namespace Avalon.Raft.Core
         /// <summary>
         /// Body as buffer representation
         /// </summary>
-        public byte[] Body { get; set; }
+        public byte[] Body;
 
         public static implicit operator byte[] (LogEntry entry)
         {
@@ -31,4 +31,36 @@ namespace Avalon.Raft.Core
             return new Bufferable(entry.Body);
         }
     }
+
+    /// <summary>
+    /// When we store LogEntry, we store Index along with it
+    /// </summary>
+    public struct StoredLogEntry
+    {
+        /// <summary>
+        /// Body as buffer representation
+        /// </summary>
+        public byte[] Body;
+
+        public long Index;
+
+        public static implicit operator byte[] (StoredLogEntry entry)
+        {
+            Bufferable b = new Bufferable(entry.Body);
+            return b.PrefixWithIndex(entry.Index).Buffer;
+        }
+
+        public static implicit operator StoredLogEntry(byte[] buffer)
+        {
+
+            var entry = new StoredLogEntry()
+            {
+                Index = BitConverter.ToInt64(buffer, 0),
+                Body = buffer.Splice(sizeof(long))
+            };
+
+            return entry;
+        }
+    }
+
 }

@@ -35,5 +35,15 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(1969L, BitConverter.ToInt64(b.Buffer, 0));
         }
 
+        [Fact]
+        public void StoredLogEntryIsFunAndImplicitlyConverts()
+        {
+            var s = new StoredLogEntry() { Body = new byte[] { 1, 2, 3, 4 }, Index = 42L };
+            byte[] buffer = s;
+            StoredLogEntry s2 = buffer;
+
+            Assert.Equal(s.Index, s2.Index);
+            Assert.Equal(s.Body, s2.Body);
+        }
     }
 }
