@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Avalon.Raft.Core
 {
-    public class Configuration
+    public class RaftSettings
     {
         /// <summary>
         /// Minimum time when a follower waits for heartbeat before decides to become a candidate. Suggested 100ms.
@@ -20,10 +20,5 @@ namespace Avalon.Raft.Core
         /// How long candidate waits for RequestVote. Probably 50-100ms
         /// </summary>
         public TimeSpan CandidacyTimeout { get; set; }
-
-        /// <summary>
-        /// In byte length. This needs to be constant in a system.
-        /// </summary>
-        public int SizeOfLogEntry { get; set; }
     }
 }

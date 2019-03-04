@@ -15,9 +15,11 @@ namespace Avalon.Raft.Core.Persistence
 
         private readonly string _directory;
         private readonly LMDBEnvironment _env;
-        private readonly Configuration _config;
         private readonly object _lock = new object();
         private PersistentState _state = null;
+        private readonly Database _logDb;
+        private readonly Database _stateDb;
+
 
         public class StateDbKeys
         {
@@ -33,62 +35,49 @@ namespace Avalon.Raft.Core.Persistence
             public static readonly string State = "avalog_state";
         }
 
-        public LmdbPersister(string directory, Configuration config)
+        public LmdbPersister(string directory)
         {
             _directory = directory;
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
             _env = LMDBEnvironment.Create(directory);
             _env.Open();
-            _config = config;
-            
+            _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates));
+            _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
+
             LoadState();
-        }
-
-        private Database OpenLogDatabase()
-        {
-            return _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates));
-        }
-
-        private Database OpenStateDatabase()
-        {
-            return _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
         }
 
         private void LoadState()
         {
             using (var tx = _env.BeginReadOnlyTransaction())
             {
-                using (var ldb = OpenLogDatabase())
+                
+                var c = _logDb.OpenReadOnlyCursor(tx);
+                var k = LogKey + 1; // to move to last position
+                long value;
+                if (c.TryFind(Lookup.EQ, ref k, out value))
                 {
-                    var c = ldb.OpenReadOnlyCursor(tx);
-                    var k = LogKey + 1; // to move to last position
-                    long value;
-                    if (c.TryFind(Lookup.EQ, ref k, out value))
-                    {
-                        this.LastIndex = value;
-                    }
+                    this.LastIndex = value;
                 }
 
-                using (var sdb = OpenStateDatabase())
+               
+                Bufferable val = default;
+                if (tx.TryGet(_stateDb, StateDbKeys.LogOffset, out val))
                 {
-                    Bufferable value = default;
-                    if (tx.TryGet(sdb, StateDbKeys.LogOffset, out value))
-                    {
-                        LogOffset = value;
-                    }
+                    LogOffset = value;
+                }
 
-                    if (tx.TryGet(sdb, StateDbKeys.Id, out value))
-                    {
-                        _state = new PersistentState();
-                        _state.Id = value;
+                if (tx.TryGet(_stateDb, StateDbKeys.Id, out val))
+                {
+                    _state = new PersistentState();
+                    _state.Id = val;
 
-                        if (tx.TryGet(sdb, StateDbKeys.CurrentTerm, out value)) // this should be always TRUE
-                            _state.CurrentTerm = value;
+                    if (tx.TryGet(_stateDb, StateDbKeys.CurrentTerm, out val)) // this should be always TRUE
+                        _state.CurrentTerm = val;
 
-                        if (tx.TryGet(sdb, StateDbKeys.LastVotedFor, out value))
-                            _state.LastVotedForId = value;
-                    }
+                    if (tx.TryGet(_stateDb, StateDbKeys.LastVotedFor, out val))
+                        _state.LastVotedForId = val;
                 }
             }
         }
@@ -103,17 +92,15 @@ namespace Avalon.Raft.Core.Persistence
             {
                 if (startingOffset != LastIndex + 1)
                     throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
-
+                var indices = Enumerable.Range(0, entries.Length).Select(x => x + startingOffset);
                 using (var tx = _env.BeginTransaction())
-                using (var db = OpenLogDatabase())
                 {
-                    foreach (var e in entries.Zip(Enumerable.Range(0, entries.Length), (l, i) => (i, l)).Select(x => ((Bufferable)x.l).PrefixWithIndex(x.i)))
+                    foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => ((Bufferable)x.l).PrefixWithIndex(x.i)))
                     {
-                        tx.Put(db, LogKey, e, TransactionPutOptions.AppendDuplicateData);
+                        tx.Put(_logDb, LogKey, e, TransactionPutOptions.AppendDuplicateData);
                     }
 
                     tx.Commit();
-
                     this.LastIndex += entries.Length;
                 }
             }
@@ -124,8 +111,7 @@ namespace Avalon.Raft.Core.Persistence
             lock (_lock)
             {
                 using (var tx = _env.BeginTransaction())
-                using (var db = OpenLogDatabase())
-                using (var c = db.OpenCursor(tx))
+                using (var c = _logDb.OpenCursor(tx))
                 {
                     long key = LogKey;
                     int i = 0;
@@ -149,12 +135,11 @@ namespace Avalon.Raft.Core.Persistence
 
             var list = new LogEntry[count];
             using (var tx = _env.BeginReadOnlyTransaction())
-            using (var db = OpenStateDatabase())
             {
                 for (long i = index; i < index + count; i++)
                 {
                     Bufferable b = i;
-                    if (!tx.TryGetDuplicate(db, LogKey, ref b))
+                    if (!tx.TryGetDuplicate(_logDb, LogKey, ref b))
                         throw new InvalidOperationException($"Could not find index {i} in the logs.");
                     StoredLogEntry s = b.Buffer;
                     if (s.Index != index)
@@ -175,6 +160,8 @@ namespace Avalon.Raft.Core.Persistence
         public void Dispose()
         {
             _env.Close();
+            _stateDb.Dispose();
+            _logDb.Dispose();
         }
 
         public void Save(PersistentState state)
@@ -182,12 +169,11 @@ namespace Avalon.Raft.Core.Persistence
             lock (_lock) // TODO: unnecessary probably
             {
                 using (var tx = _env.BeginTransaction())
-                using (var db = OpenStateDatabase())
                 {
                     if (state.LastVotedForId.HasValue)
-                        tx.Put(db, StateDbKeys.LastVotedFor, state.LastVotedForId.Value);
-                    tx.Put(db, StateDbKeys.Id, state.Id);
-                    tx.Put(db, StateDbKeys.CurrentTerm, state.CurrentTerm);
+                        tx.Put(_stateDb, StateDbKeys.LastVotedFor, state.LastVotedForId.Value);
+                    tx.Put(_stateDb, StateDbKeys.Id, state.Id);
+                    tx.Put(_stateDb, StateDbKeys.CurrentTerm, state.CurrentTerm);
                     tx.Commit();
                     _state = state;
                 }
@@ -204,9 +190,8 @@ namespace Avalon.Raft.Core.Persistence
             lock (_lock) // TODO: unnecessary probably
         {
                 using (var tx = _env.BeginTransaction())
-                using (var db = OpenStateDatabase())
                 {
-                    tx.Put(db, StateDbKeys.LastVotedFor, id);
+                    tx.Put(_stateDb, StateDbKeys.LastVotedFor, id);
                     tx.Commit();
                     _state.LastVotedForId = id;
                 }

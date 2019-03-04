@@ -11,8 +11,8 @@ namespace Avalon.Raft.Core.Tests
     public class LmdbHelperTests
     {
         private readonly string _directory;
-        private LMDBEnvironment _env;
-        const string DatabaseName = "simit";
+        protected LMDBEnvironment _env;
+        protected const string DatabaseName = "simit";
 
         public LmdbHelperTests()
         {

@@ -92,6 +92,7 @@ namespace Avalon.Common
                 Buffer.MemoryCopy(&index, destPtr, buffer.Length, sizeof(long));
                 Buffer.MemoryCopy(ptr, destPtr + sizeof(long), b.Buffer.Length, b.Buffer.Length);
             }
+
             return new Bufferable(buffer);
         }
     }
