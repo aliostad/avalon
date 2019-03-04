@@ -147,7 +147,7 @@ namespace Avalon.Raft.Core.Persistence
             if (index + count < LastIndex)
                 throw new InvalidOperationException($"We do not have these entries. index: {index}, count: {count} and LastIndex: {LastIndex}");
 
-            var list = new List<LogEntry>();
+            var list = new LogEntry[count];
             using (var tx = _env.BeginReadOnlyTransaction())
             using (var db = OpenStateDatabase())
             {
@@ -156,12 +156,15 @@ namespace Avalon.Raft.Core.Persistence
                     Bufferable b = i;
                     if (!tx.TryGetDuplicate(db, LogKey, ref b))
                         throw new InvalidOperationException($"Could not find index {i} in the logs.");
-                    list.Add(b.Buffer);
+                    StoredLogEntry s = b.Buffer;
+                    if (s.Index != index)
+                        throw new InvalidDataException($"Corruption in the highest. Supposedly loaded {index} but came out {s.Index}");
+
+                    list[i - index] = s.Body;
                 }
             }
 
-            throw new NotImplementedException();
-
+            return list;
         }
 
         public void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal)
