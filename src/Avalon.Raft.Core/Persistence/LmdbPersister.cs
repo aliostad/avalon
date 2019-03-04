@@ -120,10 +120,11 @@ namespace Avalon.Raft.Core.Persistence
                         throw new InvalidOperationException($"Could not find index {fromIndex}");
                     }
 
-                    while (c.Delete())
+                    while (c.Delete(false))
                         i++;
 
                     tx.Commit();
+                    LastIndex = fromIndex - 1;
                 }
             }
         }
