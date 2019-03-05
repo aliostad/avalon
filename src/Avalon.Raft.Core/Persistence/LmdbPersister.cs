@@ -35,12 +35,14 @@ namespace Avalon.Raft.Core.Persistence
             public static readonly string State = "avalog_state";
         }
 
-        public LmdbPersister(string directory)
+        public LmdbPersister(string directory, long mapSize = 100 * 1024 * 1024)
         {
             _directory = directory;
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
             _env = LMDBEnvironment.Create(directory);
+            _env.MapSize = mapSize;
+
             _env.Open();
             _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates));
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
@@ -160,9 +162,9 @@ namespace Avalon.Raft.Core.Persistence
 
         public void Dispose()
         {
-            _env.Close();
             _stateDb.Dispose();
             _logDb.Dispose();
+            _env.Close();
         }
 
         public void Save(PersistentState state)

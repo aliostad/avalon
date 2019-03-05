@@ -9,7 +9,7 @@ namespace Avalon.Raft.Core.Tests
 {
     public class LmdbPersisterTests
     {
-        private readonly LmdbPersister _persister;
+        private LmdbPersister _persister;
         private readonly string _directory;
 
         public LmdbPersisterTests()
@@ -40,6 +40,17 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
+        public void CanAddMultiLogsHappily()
+        {
+            LogEntry l = new byte[] { 1, 2, 3, 4 };
+
+            _persister.Append(new[] { l, l, l, l }, 0);
+
+            Assert.Equal(3L, _persister.LastIndex);
+            Assert.Equal(0L, _persister.LogOffset);
+        }
+
+        [Fact]
         public void CanAddLogsAndReadThemHappily()
         {
             LogEntry l = new byte[] { 1, 2, 3, 4 };
@@ -51,6 +62,25 @@ namespace Avalon.Raft.Core.Tests
             var es = _persister.GetEntries(2, 1);
 
             Assert.Equal(l.Body, es[0].Body);
+        }
+
+        [Fact]
+        public void CanAddManyManyLogs()
+        {
+            int t = Environment.TickCount;
+            var r = new Random();
+            var buffer = new byte[512];
+
+            for (int i = 0; i < 1000; i++)
+            {
+                r.NextBytes(buffer);
+                LogEntry l = buffer;
+                _persister.Append(new[] { l, l, l, l, l, l, l, l, l, l }, i * 10);
+            }
+
+            Assert.Equal(10_000 - 1, _persister.LastIndex);
+            var taken = Environment.TickCount - t;
+            Console.WriteLine(taken);
         }
 
         [Fact]
@@ -70,11 +100,47 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(1L, _persister.LastIndex);
         }
 
+        [Fact]
+        public void StateStoreAndRetrieveWorksLikeACharm()
+        {
+            var state = new PersistentState()
+            {
+                CurrentTerm = 42L
+            };
+
+            _persister.Save(state);
+            var persister = new LmdbPersister(_directory);
+            var st2 = persister.Load();
+            Assert.Equal(state.CurrentTerm, st2.CurrentTerm);
+            Assert.Equal(state.Id, st2.Id);
+            Assert.Equal(state.LastVotedForId, st2.LastVotedForId);
+            persister.Dispose();
+        }
+
+        [Fact]
+        public void AppendBadSequencingThrowsUp()
+        {
+            LogEntry l = new byte[] { 1, 2, 3, 4 };
+
+            _persister.Append(new[] { l }, 0);
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.Append(new[] { l }, 2));
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.Append(new[] { l }, 0));
+
+            Assert.Equal(0L, _persister.LastIndex);
+        }
 
         ~LmdbPersisterTests()
         {
             _persister.Dispose();
-            Directory.Delete(_directory, true);
+            try
+            {
+                Directory.Delete(_directory, true);
+            }
+            catch (Exception e)
+            {
+                Console.WriteLine(e.ToString());
+            }
+            
         }
     }
 }
