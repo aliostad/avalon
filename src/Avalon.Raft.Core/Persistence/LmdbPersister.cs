@@ -9,7 +9,10 @@ using Spreads.Buffers;
 
 namespace Avalon.Raft.Core.Persistence
 {
-    public class LmdbPersister : ILogPersister, IStatePersister, IDisposable
+    /// <summary>
+    /// Implements various persistance requirements using LMDB (and files for snapshot)
+    /// </summary>
+    public class LmdbPersister : ILogPersister, IStatePersister, ISnapshotOperator, IDisposable
     {
         private const long LogKey = 0L;
 
@@ -35,6 +38,11 @@ namespace Avalon.Raft.Core.Persistence
             public static readonly string State = "avalog_state";
         }
 
+        /// <summary>
+        /// Creates a new
+        /// </summary>
+        /// <param name="directory">directory where the data and snapshots kept</param>
+        /// <param name="mapSize">Default is 100 MB</param>
         public LmdbPersister(string directory, long mapSize = 100 * 1024 * 1024)
         {
             _directory = directory;
@@ -84,10 +92,13 @@ namespace Avalon.Raft.Core.Persistence
             }
         }
 
+        /// <inheritdocs/>
         public long LogOffset { get; set; } = 0;
 
+        /// <inheritdocs/>
         public long LastIndex { get; set; } = -1;
 
+        /// <inheritdocs/>
         public void Append(LogEntry[] entries, long startingOffset)
         {
             lock(_lock)
@@ -108,6 +119,7 @@ namespace Avalon.Raft.Core.Persistence
             }
         }
 
+        /// <inheritdocs/>
         public void DeleteEntries(long fromIndex)
         {
             lock (_lock)
@@ -131,6 +143,7 @@ namespace Avalon.Raft.Core.Persistence
             }
         }
 
+        /// <inheritdocs/>
         public LogEntry[] GetEntries(long index, int count)
         {
             if (index + count < LastIndex)
@@ -155,11 +168,13 @@ namespace Avalon.Raft.Core.Persistence
             return list;
         }
 
+        /// <inheritdocs/>
         public void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal)
         {
             throw new NotImplementedException();
         }
 
+        /// <inheritdocs/>
         public void Dispose()
         {
             _stateDb.Dispose();
@@ -167,6 +182,7 @@ namespace Avalon.Raft.Core.Persistence
             _env.Close();
         }
 
+        /// <inheritdocs/>
         public void Save(PersistentState state)
         {
             lock (_lock) // TODO: unnecessary probably
@@ -183,11 +199,13 @@ namespace Avalon.Raft.Core.Persistence
             }
         }
 
+        /// <inheritdocs/>
         public PersistentState Load()
         {
             return _state;
         }
 
+        /// <inheritdocs/>
         public void SaveLastVotedFor(Guid id)
         {
             lock (_lock) // TODO: unnecessary probably
@@ -199,6 +217,30 @@ namespace Avalon.Raft.Core.Persistence
                     _state.LastVotedForId = id;
                 }
             }
+        }
+
+        /// <inheritdocs/>
+        public void CleanSnapshots()
+        {
+            throw new NotImplementedException();
+        }
+        
+        /// <inheritdocs/>
+        public Stream GetNextSnapshotStream(long lastIndexIncluded)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdocs/>
+        public void FinaliseSnapshot(Stream stream)
+        {
+            throw new NotImplementedException();
+        }
+
+        /// <inheritdocs/>
+        public bool TryGetLastSnapshot(out Snapshot snapshot)
+        {
+            throw new NotImplementedException();
         }
     }
 }
