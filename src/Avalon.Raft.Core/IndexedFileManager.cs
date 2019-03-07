@@ -17,21 +17,23 @@ namespace Avalon.Raft.Core
         public IndexedFileManager(string directory)
         {
             _directory = directory;
+            if (!Directory.Exists(_directory))
+                Directory.CreateDirectory(_directory);
         }
 
         public string GetTempFileNameForIndex(long index)
         {
-            return Path.Combine($"{index}.snapshot.tmp");
+            return Path.Combine(_directory, $"{index}.snapshot.tmp");
         }
 
         public string GetFinalFileNameForIndex(long index)
         {
-            return Path.Combine($"{index}.snapshot");
+            return Path.Combine(_directory, $"{index}.snapshot");
         }
 
-        private long GetSnapshotIndex(string fileName)
+        internal long GetSnapshotIndex(string fileName)
         {
-            return Convert.ToInt64(fileName.Split('.')[0]);
+            return Convert.ToInt64(Path.GetFileName(fileName).Split('.')[0]);
         }
 
         private bool IsTemp(string fileName)
