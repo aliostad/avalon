@@ -30,6 +30,7 @@ namespace Avalon.Raft.Core.Persistence
         /// Stream is now complete with the snapshot and needs to be finalised
         /// </summary>
         /// <param name="stream">The complete snapshot stream (originally created by GetNextSnapshotStream)</param>
-        void FinaliseSnapshot(Stream stream);
+        /// <param name="lastIndexIncluded">Index of the last log entry applied</param>
+        void FinaliseSnapshot(Stream stream, long lastIndexIncluded);
     }
 }

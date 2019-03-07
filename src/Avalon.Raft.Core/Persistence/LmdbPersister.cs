@@ -22,7 +22,7 @@ namespace Avalon.Raft.Core.Persistence
         private PersistentState _state = null;
         private readonly Database _logDb;
         private readonly Database _stateDb;
-
+        private readonly IndexedFileManager _snapMgr;
 
         public class StateDbKeys
         {
@@ -171,7 +171,37 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal)
         {
-            throw new NotImplementedException();
+            var fileName = _snapMgr.GetTempFileNameForIndex(lastIncludedIndex);
+            Stream stream = null;
+            if (File.Exists(fileName))
+            {
+                var info = new FileInfo(fileName);
+                if (offsetInFile != info.Length)
+                    throw new InvalidOperationException($"Bad position. Snapshot chunk is at {offsetInFile} but file has a size of {info.Length}.");
+                stream = new FileStream(fileName, FileMode.Open);
+                stream.Position = info.Length;
+            }
+            else
+            {
+                if (offsetInFile != 0)
+                    throw new InvalidOperationException($"Bad position. Snapshot chunk is at {offsetInFile} but file has a size of zero.");
+
+                stream = new FileStream(fileName, FileMode.OpenOrCreate);
+            }
+
+            stream.Write(chunk, 0, chunk.Length);
+            stream.Close();
+
+            if (isFinal)
+            {
+                TruncateLogToIndex(lastIncludedIndex + 1);
+                File.Move(_snapMgr.GetTempFileNameForIndex(lastIncludedIndex), _snapMgr.GetFinalFileNameForIndex(lastIncludedIndex));
+            }
+        }
+
+        private void TruncateLogToIndex(long lastIncludedIndex)
+        {
+            `
         }
 
         /// <inheritdocs/>
@@ -222,25 +252,44 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public void CleanSnapshots()
         {
-            throw new NotImplementedException();
+            try
+            {
+                foreach (var f in _snapMgr.GetPreviousSnapshots())
+                    File.Delete(f);
+            }
+            catch (Exception e)
+            {
+                TheTrace.TraceWarning(e.ToString());
+            }
+
         }
         
         /// <inheritdocs/>
         public Stream GetNextSnapshotStream(long lastIndexIncluded)
         {
-            throw new NotImplementedException();
+            return new FileStream(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), FileMode.OpenOrCreate)
         }
 
         /// <inheritdocs/>
-        public void FinaliseSnapshot(Stream stream)
+        public void FinaliseSnapshot(Stream stream, long lastIndexIncluded)
         {
-            throw new NotImplementedException();
+            stream.Close();
+            File.Move(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), _snapMgr.GetFinalFileNameForIndex(lastIndexIncluded));
         }
 
         /// <inheritdocs/>
         public bool TryGetLastSnapshot(out Snapshot snapshot)
         {
-            throw new NotImplementedException();
+            var index = _snapMgr.GetLastFinalIndex();
+            snapshot = null;
+            if (index.HasValue)
+                snapshot = new Snapshot()
+                {
+                    LastIncludedIndex = index.Value,
+                    Stream = new FileStream(_snapMgr.GetFinalFileNameForIndex(index.Value), FileMode.Open)
+                };
+
+            return index.HasValue;
         }
     }
 }
