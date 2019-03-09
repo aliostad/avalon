@@ -8,6 +8,7 @@ namespace Avalon.Common
     public struct Bufferable
     {
         private readonly byte[] _buffer; 
+
         public Bufferable(byte[] buffer)
         {
             if (buffer == null)

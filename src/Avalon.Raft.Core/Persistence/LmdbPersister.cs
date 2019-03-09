@@ -194,14 +194,17 @@ namespace Avalon.Raft.Core.Persistence
 
             if (isFinal)
             {
-                TruncateLogToIndex(lastIncludedIndex + 1);
+                TruncateLogUpToIndex(lastIncludedIndex + 1);
                 File.Move(_snapMgr.GetTempFileNameForIndex(lastIncludedIndex), _snapMgr.GetFinalFileNameForIndex(lastIncludedIndex));
             }
         }
 
-        private void TruncateLogToIndex(long lastIncludedIndex)
+        private void TruncateLogUpToIndex(long index)
         {
-            `
+            using (var tx = _env.BeginTransaction())
+            {
+                tx.DeleteUpToValue(_logDb, LogKey, index);
+            }
         }
 
         /// <inheritdocs/>
@@ -267,7 +270,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public Stream GetNextSnapshotStream(long lastIndexIncluded)
         {
-            return new FileStream(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), FileMode.OpenOrCreate)
+            return new FileStream(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), FileMode.OpenOrCreate);
         }
 
         /// <inheritdocs/>

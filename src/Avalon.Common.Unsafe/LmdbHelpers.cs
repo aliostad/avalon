@@ -1,9 +1,7 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Text;
-using Spreads.LMDB;
+﻿using Spreads.LMDB;
 using Spreads.Buffers;
 using Spreads;
+using System.Runtime.CompilerServices;
 
 namespace Avalon.Common
 {
@@ -55,5 +53,42 @@ namespace Avalon.Common
             }
         }
 
+
+        /// <summary>
+        /// Deletes up to (but not including) this value for the key.
+        /// </summary>
+        /// <param name="tx">transaction</param>
+        /// <param name="db">database</param>
+        /// <param name="key">key</param>
+        /// <param name="value">Value (or part of the value) to which the data will be deleted</param>
+        /// <param name="firstValue">First value to position to the beginning of dupes. Even if first value is bigger it is OK.</param>
+        /// <returns></returns>
+        public static unsafe bool DeleteUpToValue(this Transaction tx, Database db, Bufferable key, long value, long firstValue = 0L)
+        {
+            using (var c = db.OpenCursor(tx))
+            {
+                fixed (byte* keyPtr = &key.Buffer[0])
+                {
+                    var keydb = new DirectBuffer(key.Buffer.Length, keyPtr);
+                    var ptr = Unsafe.AsPointer(ref firstValue);
+                    var valdb = new DirectBuffer(sizeof(long), (byte*) ptr);
+                    c.TryFindDup(Lookup.EQ, ref keydb, ref valdb);
+
+                    while (c.Delete(false))
+                    {
+                        c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent);
+                        if (valdb.IsEmpty)
+                            break;
+
+                        var currentValue = valdb.ReadInt64(0);
+                        if (currentValue == value)
+                            break;
+                    }
+
+                    return true;
+                }
+            }
+
+        }
     }
 }

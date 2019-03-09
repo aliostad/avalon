@@ -18,11 +18,12 @@ namespace Avalon.Raft.Core.Tests
         {
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             _env = LMDBEnvironment.Create(_directory);
+            _env.MapSize = 100 * 1024 * 1024;
             _env.Open();
         }
 
         [Fact]
-        public void Can_Save_And_Read_String()
+        public void CanSaveAndReadString()
         {
             string key = "jam!";
             string value = "jim!";
@@ -46,7 +47,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void Can_Save_And_Read_Long()
+        public void CanSaveAndReadLong()
         {
             var key = 42L;
             var value = 1969L;
@@ -70,7 +71,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void Can_Save_And_Read_int_guid()
+        public void CanSaveAndReadintguid()
         {
             var key = 42;
             var value = Guid.NewGuid();
@@ -94,7 +95,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void Can_Save_And_Read_Dup()
+        public void CanSaveAndReadDup()
         {
             var key = 42;
             var value = Guid.NewGuid();
@@ -118,6 +119,48 @@ namespace Avalon.Raft.Core.Tests
                     Assert.True(success);
                     Assert.Equal(i + 2, BitConverter.ToInt64(b.Buffer, 0));
                 }
+            }
+        }
+
+        [Fact]
+        public void CanDeleteUpTo()
+        {
+            var key = 42L;
+            var value = Guid.NewGuid();
+            var total = 1000_000L;
+            var upto = 100_000L;
+
+            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates)))
+            {
+                using (var tx = _env.BeginTransaction())
+                {
+                    for (long i = 0; i < total; i++)
+                    {
+                        tx.Put(db, key, new Bufferable(i, value), TransactionPutOptions.AppendDuplicateData);
+                    }
+                   
+                    tx.Commit();
+                }
+
+                Assert.Equal(total, db.GetEntriesCount());
+
+                using (var tx2 = _env.BeginTransaction())
+                {
+                    Assert.True(tx2.DeleteUpToValue(db, key, upto));
+                    tx2.Commit();
+                }
+
+                Assert.Equal(total - upto, db.GetEntriesCount());
+
+                using (var tx3 = _env.BeginReadOnlyTransaction())
+                {
+                    Bufferable checkValue = 1000L;
+                    tx3.TryGetDuplicate(db, key, ref checkValue);
+
+                    checkValue = 100_000L;
+                    Assert.True(tx3.TryGetDuplicate(db, key, ref checkValue));
+                }
+
             }
         }
 
