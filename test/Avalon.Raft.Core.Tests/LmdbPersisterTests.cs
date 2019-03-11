@@ -1,7 +1,9 @@
-﻿using Avalon.Raft.Core.Persistence;
+﻿using Avalon.Common;
+using Avalon.Raft.Core.Persistence;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
 using Xunit;
 
@@ -127,6 +129,25 @@ namespace Avalon.Raft.Core.Tests
             Assert.ThrowsAny<InvalidOperationException>(() => _persister.Append(new[] { l }, 0));
 
             Assert.Equal(0L, _persister.LastIndex);
+        }
+
+        [Fact]
+        public void CanRunSnapshotSimulation()
+        {
+            const int BatchSize = 100;
+            for (int i = 0; i < 1000; i++)
+            {
+                var entries = Enumerable.Range(i * BatchSize, BatchSize).Select(x => (LogEntry)(Bufferable)Guid.NewGuid()).ToArray();
+                _persister.Append(entries, i * BatchSize);
+            }
+
+            var lastIncludedIndex = 10_000L - 1;
+            var stream = _persister.GetNextSnapshotStream(lastIncludedIndex);
+            stream.Write(new byte[1024], 0, 1024);
+            stream.Close();
+            _persister.FinaliseSnapshot(lastIncludedIndex);
+            Assert.Equal(lastIncludedIndex + 1, _persister.LogOffset);
+
         }
 
         ~LmdbPersisterTests()

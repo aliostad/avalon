@@ -30,6 +30,13 @@ namespace Avalon.Raft.Core
         {
             return new Bufferable(entry.Body);
         }
+
+        public static implicit operator LogEntry(Bufferable buffer)
+        {
+            var entry = new LogEntry() { Body = buffer.Buffer };
+            return entry;
+        }
+
     }
 
     /// <summary>

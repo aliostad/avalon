@@ -50,8 +50,10 @@ namespace Avalon.Raft.Core.Persistence
                 Directory.CreateDirectory(directory);
             _env = LMDBEnvironment.Create(directory);
             _env.MapSize = mapSize;
-
             _env.Open();
+
+            _snapMgr = new IndexedFileManager(_directory);
+
             _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates));
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
 
@@ -194,7 +196,9 @@ namespace Avalon.Raft.Core.Persistence
 
             if (isFinal)
             {
-                TruncateLogUpToIndex(lastIncludedIndex + 1);
+                var newOffset = lastIncludedIndex + 1;
+                TruncateLogUpToIndex(newOffset);
+                FinaliseSnapshot(lastIncludedIndex);
                 File.Move(_snapMgr.GetTempFileNameForIndex(lastIncludedIndex), _snapMgr.GetFinalFileNameForIndex(lastIncludedIndex));
             }
         }
@@ -270,14 +274,20 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public Stream GetNextSnapshotStream(long lastIndexIncluded)
         {
+            if (lastIndexIncluded <= LogOffset)
+                throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is less or equal to LogOffset of {LogOffset}");
+
+            if (lastIndexIncluded > LastIndex)
+                throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is greater than LastIndex of {LastIndex}");
+
             return new FileStream(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), FileMode.OpenOrCreate);
         }
 
         /// <inheritdocs/>
-        public void FinaliseSnapshot(Stream stream, long lastIndexIncluded)
+        public void FinaliseSnapshot(long lastIndexIncluded)
         {
-            stream.Close();
             File.Move(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), _snapMgr.GetFinalFileNameForIndex(lastIndexIncluded));
+            this.LogOffset = lastIndexIncluded + 1;
         }
 
         /// <inheritdocs/>
