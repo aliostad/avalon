@@ -147,7 +147,9 @@ namespace Avalon.Raft.Core.Tests
             stream.Close();
             _persister.FinaliseSnapshot(lastIncludedIndex);
             Assert.Equal(lastIncludedIndex + 1, _persister.LogOffset);
-
+            Snapshot snap = null;
+            Assert.True(_persister.TryGetLastSnapshot(out snap));
+            Assert.Equal(lastIncludedIndex, snap.LastIncludedIndex);
         }
 
         ~LmdbPersisterTests()

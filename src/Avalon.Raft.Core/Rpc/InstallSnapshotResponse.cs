@@ -4,7 +4,7 @@ using System.Text;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public class InstallUpdateResponse
+    public class InstallSnapshotResponse
     {
         /// <summary>
         /// currentTerm, for leader to update itself

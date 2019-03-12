@@ -4,7 +4,10 @@ using System.Text;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public class InstallUpdateRequest
+    /// <summary>
+    /// Install snapshot on followers
+    /// </summary>
+    public class InstallSnapshotRequest
     {
         /// <summary>
         /// leader’s term

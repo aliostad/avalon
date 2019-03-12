@@ -11,7 +11,7 @@ namespace Avalon.Raft.Core.Rpc
 
         Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request);
 
-        Task<InstallUpdateResponse> InstallUpdateAsync(InstallUpdateRequest request);
+        Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request);
 
         Role Role { get; }
 

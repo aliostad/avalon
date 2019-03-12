@@ -20,7 +20,7 @@ namespace Avalon.Raft.Core.Rpc
             throw new NotImplementedException();
         }
 
-        public Task<InstallUpdateResponse> InstallUpdateAsync(InstallUpdateRequest request)
+        public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
             throw new NotImplementedException();
         }
