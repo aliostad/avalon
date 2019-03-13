@@ -12,6 +12,6 @@ namespace Avalon.Raft.Core.Persistence
 
         PersistentState Load();
 
-
+        PersistentState GetLatest();
     }
 }

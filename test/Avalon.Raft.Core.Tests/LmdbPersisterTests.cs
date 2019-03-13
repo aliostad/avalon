@@ -31,7 +31,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanAddLogsHappily()
         {
-            LogEntry l = new byte[] { 1, 2, 3, 4 };
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
 
             _persister.Append(new[] { l }, 0);
             _persister.Append(new[] { l }, 1);
@@ -44,7 +48,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanAddMultiLogsHappily()
         {
-            LogEntry l = new byte[] { 1, 2, 3, 4 };
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
 
             _persister.Append(new[] { l, l, l, l }, 0);
 
@@ -55,7 +63,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanAddLogsAndReadThemHappily()
         {
-            LogEntry l = new byte[] { 1, 2, 3, 4 };
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
 
             _persister.Append(new[] { l }, 0);
             _persister.Append(new[] { l }, 1);
@@ -76,7 +88,12 @@ namespace Avalon.Raft.Core.Tests
             for (int i = 0; i < 1000; i++)
             {
                 r.NextBytes(buffer);
-                LogEntry l = buffer;
+                LogEntry l = new LogEntry()
+                {
+                    Body = buffer,
+                    Term = 42L
+                };
+                
                 _persister.Append(new[] { l, l, l, l, l, l, l, l, l, l }, i * 10);
             }
 
@@ -88,7 +105,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanAddLogsAndDeleteThemHappily()
         {
-            LogEntry l = new byte[] { 1, 2, 3, 4 };
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
 
             _persister.Append(new[] { l }, 0);
             _persister.Append(new[] { l }, 1);
@@ -122,7 +143,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void AppendBadSequencingThrowsUp()
         {
-            LogEntry l = new byte[] { 1, 2, 3, 4 };
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
 
             _persister.Append(new[] { l }, 0);
             Assert.ThrowsAny<InvalidOperationException>(() => _persister.Append(new[] { l }, 2));
@@ -137,7 +162,15 @@ namespace Avalon.Raft.Core.Tests
             const int BatchSize = 100;
             for (int i = 0; i < 1000; i++)
             {
-                var entries = Enumerable.Range(i * BatchSize, BatchSize).Select(x => (LogEntry)(Bufferable)Guid.NewGuid()).ToArray();
+                var entries = Enumerable.Range(i * BatchSize, BatchSize).Select(x => 
+                {
+                    var b = (Bufferable)Guid.NewGuid();
+                    return new LogEntry()
+                    {
+                        Term = 42L,
+                        Body = b.Buffer
+                    };
+                }).ToArray();
                 _persister.Append(entries, i * BatchSize);
             }
 

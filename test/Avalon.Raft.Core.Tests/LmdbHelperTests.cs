@@ -5,6 +5,7 @@ using System.Text;
 using Spreads.LMDB;
 using Xunit;
 using Avalon.Common;
+using System.Diagnostics;
 
 namespace Avalon.Raft.Core.Tests
 {
@@ -166,8 +167,15 @@ namespace Avalon.Raft.Core.Tests
 
         ~LmdbHelperTests()
         {
-            _env.Close();
-            Directory.Delete(_directory, true);
+            try
+            {
+                _env.Close();
+                Directory.Delete(_directory, true);
+            }
+            catch(Exception e)
+            {
+                Trace.TraceWarning(e.ToString());
+            }
         }
     }
 }

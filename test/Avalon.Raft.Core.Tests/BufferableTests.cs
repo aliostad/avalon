@@ -15,9 +15,10 @@ namespace Avalon.Raft.Core.Tests
             var bb = new byte[128];
             r.NextBytes(bb);
             var b = new Bufferable(bb);
-            var b2 = b.PrefixWithIndex(42);
+            var b2 = b.PrefixWithIndexAndTerm(42, 122);
             Assert.Equal(42, BitConverter.ToInt64(b2.Buffer, 0));
-            Assert.Equal(bb, b2.Buffer.Skip(8));
+            Assert.Equal(122, BitConverter.ToInt64(b2.Buffer, 8));
+            Assert.Equal(bb, b2.Buffer.Skip(16));
         }
 
         [Fact]
@@ -38,7 +39,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void StoredLogEntryIsFunAndImplicitlyConverts()
         {
-            var s = new StoredLogEntry() { Body = new byte[] { 1, 2, 3, 4 }, Index = 42L };
+            var s = new StoredLogEntry() { Body = new byte[] { 1, 2, 3, 4 }, Index = 42L, Term = 122L };
             byte[] buffer = s;
             StoredLogEntry s2 = buffer;
 

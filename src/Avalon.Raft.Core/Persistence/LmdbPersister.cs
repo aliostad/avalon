@@ -67,17 +67,18 @@ namespace Avalon.Raft.Core.Persistence
                 
                 var c = _logDb.OpenReadOnlyCursor(tx);
                 var k = LogKey + 1; // to move to last position
-                long value;
+                StoredLogEntryHeader value;
                 if (c.TryFind(Lookup.EQ, ref k, out value))
                 {
-                    this.LastIndex = value;
+                    this.LastIndex = value.Index;
+                    this.LastEntryTerm = value.Term;
                 }
 
                
                 Bufferable val = default;
                 if (tx.TryGet(_stateDb, StateDbKeys.LogOffset, out val))
                 {
-                    LogOffset = value;
+                    LogOffset = val;
                 }
 
                 if (tx.TryGet(_stateDb, StateDbKeys.Id, out val))
@@ -101,6 +102,9 @@ namespace Avalon.Raft.Core.Persistence
         public long LastIndex { get; set; } = -1;
 
         /// <inheritdocs/>
+        public long LastEntryTerm { get; set; } = -1;
+
+        /// <inheritdocs/>
         public void Append(LogEntry[] entries, long startingOffset)
         {
             lock(_lock)
@@ -110,7 +114,7 @@ namespace Avalon.Raft.Core.Persistence
                 var indices = Enumerable.Range(0, entries.Length).Select(x => x + startingOffset);
                 using (var tx = _env.BeginTransaction())
                 {
-                    foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => ((Bufferable)x.l).PrefixWithIndex(x.i)))
+                    foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => new Bufferable(x.l.Body).PrefixWithIndexAndTerm(x.i, x.l.Term)))
                     {
                         tx.Put(_logDb, LogKey, e, TransactionPutOptions.AppendDuplicateData);
                     }
@@ -163,7 +167,11 @@ namespace Avalon.Raft.Core.Persistence
                     if (s.Index != index)
                         throw new InvalidDataException($"Corruption in the highest. Supposedly loaded {index} but came out {s.Index}");
 
-                    list[i - index] = s.Body;
+                    list[i - index] = new LogEntry()
+                    {
+                        Body = s.Body,
+                        Term = s.Term
+                    };
                 }
             }
 
@@ -303,6 +311,12 @@ namespace Avalon.Raft.Core.Persistence
                 };
 
             return index.HasValue;
+        }
+
+        /// <inheritdocs/>
+        public PersistentState GetLatest()
+        {
+            return _state;
         }
     }
 }

@@ -6,8 +6,17 @@ namespace Avalon.Raft.Core.Rpc
 {
     public class AppendEntriesResponse
     {
-        public long CurrentTerm { get; set; }
+        public AppendEntriesResponse(long ownTerm, bool success, string reason = null)
+        {
+            CurrentTerm = ownTerm;
+            IsSuccess = success;
+            Reason = reason;
+        }
 
-        public bool IsSuccess { get; set; }
+        public long CurrentTerm { get; }
+
+        public bool IsSuccess { get; }
+
+        public string Reason { get; } 
     }
 }

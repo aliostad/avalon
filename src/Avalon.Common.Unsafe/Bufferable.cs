@@ -39,7 +39,9 @@ namespace Avalon.Common
             }
         }
 
-
+        /// <summary>
+        /// Byte array that this object represents
+        /// </summary>
         public byte[] Buffer => _buffer;
 
         public static implicit operator Bufferable(string s)
@@ -62,6 +64,11 @@ namespace Avalon.Common
             return new Bufferable(g.ToByteArray());
         }
 
+        public static implicit operator Bufferable(byte[] buffer)
+        {
+            return new Bufferable(buffer);
+        }
+
         public static implicit operator string(Bufferable b)
         {
             return b.Buffer == null || b.Buffer.Length == 0 ? default(string) : Encoding.UTF8.GetString(b.Buffer);
@@ -81,17 +88,19 @@ namespace Avalon.Common
         {
             return b.Buffer == null || b.Buffer.Length == 0 ? default(Guid) : new Guid(b.Buffer);
         }
+
     }
 
     public static class BufferableExtensions
     {
-        public static unsafe Bufferable PrefixWithIndex(this Bufferable b, long index)
+        public static unsafe Bufferable PrefixWithIndexAndTerm(this Bufferable b, long index, long term)
         {
-            var buffer = new byte[sizeof(long) + b.Buffer.Length];
+            var buffer = new byte[sizeof(long)*2 + b.Buffer.Length];
             fixed (byte* ptr = &b.Buffer[0], destPtr = &buffer[0])
             {
                 Buffer.MemoryCopy(&index, destPtr, buffer.Length, sizeof(long));
-                Buffer.MemoryCopy(ptr, destPtr + sizeof(long), b.Buffer.Length, b.Buffer.Length);
+                Buffer.MemoryCopy(&term, destPtr + sizeof(long), buffer.Length, sizeof(long));
+                Buffer.MemoryCopy(ptr, destPtr + sizeof(long)*2, b.Buffer.Length, b.Buffer.Length);
             }
 
             return new Bufferable(buffer);

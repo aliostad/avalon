@@ -37,6 +37,6 @@ namespace Avalon.Raft.Core.Rpc
         /// <summary>
         /// Entries. Could be empty.
         /// </summary>
-        public LogEntry[] Entries { get; set; }
+        public byte[][] Entries { get; set; }
     }
 }
