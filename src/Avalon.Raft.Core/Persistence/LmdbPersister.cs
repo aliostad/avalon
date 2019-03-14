@@ -172,6 +172,9 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public LogEntry[] GetEntries(long index, int count)
         {
+            if (index < LogOffset)
+                throw new InvalidOperationException($"Entry not available and is part of snapshot. index: {index}, count: {count} and LogOffset: {LogOffset}");
+
             if (index + count - 1 > LastIndex)
                 throw new InvalidOperationException($"We do not have these entries. index: {index}, count: {count} and LastIndex: {LastIndex}");
 

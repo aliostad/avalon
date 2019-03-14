@@ -170,7 +170,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void CanRunSnapshotSimulation()
+        public void CanRunSnapshotSimulationAndCantReadBeforeLogOffset()
         {
             const int BatchSize = 100;
             for (int i = 0; i < 1000; i++)
@@ -196,6 +196,7 @@ namespace Avalon.Raft.Core.Tests
             Snapshot snap = null;
             Assert.True(_persister.TryGetLastSnapshot(out snap));
             Assert.Equal(lastIncludedIndex, snap.LastIncludedIndex);
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(lastIncludedIndex, 1));
         }
 
         public void Dispose()
