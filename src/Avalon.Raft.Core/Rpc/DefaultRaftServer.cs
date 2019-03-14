@@ -37,7 +37,7 @@ namespace Avalon.Raft.Core.Rpc
 
             if (request.PreviousLogIndex > _persister.LastIndex)
             {
-                message = $"Position for last log entry os {_persister.LastIndex} but got {request.PreviousLogIndex}";
+                message = $"Position for last log entry is {_persister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
             }

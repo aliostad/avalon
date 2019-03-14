@@ -63,19 +63,32 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanAddLogsAndReadThemHappily()
         {
-            LogEntry l = new LogEntry()
-            {
-                Body = new byte[] { 1, 2, 3, 4 },
-                Term = 42L
-            };
+            var buffer = new byte[] { 1, 2, 3, 4 };
 
-            _persister.Append(new[] { l }, 0);
-            _persister.Append(new[] { l }, 1);
-            _persister.Append(new[] { l }, 2);
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 0L } }, 0);
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 1L } }, 1);
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 2L } }, 2);
 
-            var es = _persister.GetEntries(2, 1);
+            var es = _persister.GetEntries(1, 1);
 
-            Assert.Equal(l.Body, es[0].Body);
+            Assert.Equal(buffer, es[0].Body);
+            Assert.Equal(1L, es[0].Term);
+        }
+
+        [Fact]
+        public void CanAddLogsAndReadUnHappilyWhenRangeWrongy()
+        {
+            var buffer = new byte[] { 1, 2, 3, 4 };
+
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 0L } }, 0);
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 1L } }, 1);
+            _persister.Append(new[] { new LogEntry() { Body = buffer, Term = 2L } }, 2);
+            Assert.Equal(2L, _persister.LastIndex);
+            Assert.Equal(2L, _persister.LastEntryTerm);
+
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(3, 1));
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(2, 2));
+            Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(0, 4));
         }
 
         [Fact]

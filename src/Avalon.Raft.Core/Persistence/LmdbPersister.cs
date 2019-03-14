@@ -60,21 +60,36 @@ namespace Avalon.Raft.Core.Persistence
             LoadState();
         }
 
+        private void LoadLastTermAndIndex()
+        {
+            using (var tx = _env.BeginReadOnlyTransaction())
+            {
+                LoadLastTermAndIndex(tx);
+            }
+        }
+
+        private void LoadLastTermAndIndex(ReadOnlyTransaction tx)
+        {
+            var c = _logDb.OpenReadOnlyCursor(tx);
+            var k = LogKey;
+            StoredLogEntryHeader value = new StoredLogEntryHeader()
+            {
+                Index = long.MaxValue
+            };
+
+            if (c.TryFindDup(Lookup.LE, ref k, ref value))
+            {
+                this.LastIndex = value.Index;
+                this.LastEntryTerm = value.Term;
+            }
+        }
+
         private void LoadState()
         {
             using (var tx = _env.BeginReadOnlyTransaction())
             {
-                
-                var c = _logDb.OpenReadOnlyCursor(tx);
-                var k = LogKey + 1; // to move to last position
-                StoredLogEntryHeader value;
-                if (c.TryFind(Lookup.EQ, ref k, out value))
-                {
-                    this.LastIndex = value.Index;
-                    this.LastEntryTerm = value.Term;
-                }
+                LoadLastTermAndIndex(tx);
 
-               
                 Bufferable val = default;
                 if (tx.TryGet(_stateDb, StateDbKeys.LogOffset, out val))
                 {
@@ -96,21 +111,25 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public long LogOffset { get; set; } = 0;
+        public long LogOffset { get; private set; } = 0;
 
         /// <inheritdocs/>
-        public long LastIndex { get; set; } = -1;
+        public long LastIndex { get; private set; } = -1;
 
         /// <inheritdocs/>
-        public long LastEntryTerm { get; set; } = -1;
+        public long LastEntryTerm { get; private set; } = -1;
 
         /// <inheritdocs/>
         public void Append(LogEntry[] entries, long startingOffset)
         {
-            lock(_lock)
+            if (startingOffset != LastIndex + 1)
+                throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
+            
+            if (entries.Length == 0)
+                throw new InvalidOperationException("Entries is empty.");
+
+            lock (_lock)
             {
-                if (startingOffset != LastIndex + 1)
-                    throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
                 var indices = Enumerable.Range(0, entries.Length).Select(x => x + startingOffset);
                 using (var tx = _env.BeginTransaction())
                 {
@@ -120,7 +139,7 @@ namespace Avalon.Raft.Core.Persistence
                     }
 
                     tx.Commit();
-                    this.LastIndex += entries.Length;
+                    LoadLastTermAndIndex();
                 }
             }
         }
@@ -144,7 +163,8 @@ namespace Avalon.Raft.Core.Persistence
                         i++;
 
                     tx.Commit();
-                    LastIndex = fromIndex - 1;
+
+                    LoadLastTermAndIndex();
                 }
             }
         }
@@ -152,7 +172,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public LogEntry[] GetEntries(long index, int count)
         {
-            if (index + count < LastIndex)
+            if (index + count - 1 > LastIndex)
                 throw new InvalidOperationException($"We do not have these entries. index: {index}, count: {count} and LastIndex: {LastIndex}");
 
             var list = new LogEntry[count];
