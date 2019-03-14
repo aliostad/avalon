@@ -10,9 +10,9 @@ namespace Avalon.Raft.Core.Rpc
     public class AppendEntriesRequest
     {
         /// <summary>
-        /// leader’s term
+        /// Term of leader
         /// </summary>
-        public long CurrentTerm { get; set; }
+        public long Term { get; set; }
 
         /// <summary>
         /// so follower can redirect clients

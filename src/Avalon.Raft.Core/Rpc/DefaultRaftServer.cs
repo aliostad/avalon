@@ -28,9 +28,9 @@ namespace Avalon.Raft.Core.Rpc
         public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
         {
             string message = null;
-            if (request.CurrentTerm < State.CurrentTerm)
+            if (request.Term < State.CurrentTerm)
             {
-                message = $"Leader's term is behind ({request.CurrentTerm} vs {State.CurrentTerm}).";
+                message = $"Leader's term is behind ({request.Term} vs {State.CurrentTerm}).";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
             }
@@ -44,6 +44,14 @@ namespace Avalon.Raft.Core.Rpc
 
             if (request.PreviousLogIndex < _persister.LastIndex)
             {
+                var entry = _persister.GetEntries(request.PreviousLogIndex, 1).First();
+                if (entry.Term != request.Term)
+                {
+                    message = $"Position at {request.PreviousLogIndex} has term {entry.Term} but according to leader {request.LeaderId} it must be {request.PreviousLogTerm}";
+                    TheTrace.TraceWarning(message);
+                    return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
+                }
+
                 _persister.DeleteEntries(request.PreviousLogIndex + 1);
                 TheTrace.TraceWarning("Stripping the log from index {0}. Last index was {1}", request.PreviousLogIndex + 1, _persister.LastIndex);
             }
@@ -53,20 +61,22 @@ namespace Avalon.Raft.Core.Rpc
                 var entries = request.Entries.Select(x => new LogEntry()
                 {
                     Body = x,
-                    Term = request.CurrentTerm
+                    Term = request.Term
                 }).ToArray();
 
                 _persister.Append(entries, request.PreviousLogIndex + 1);
             }
 
-            //_persister.Append()
-            throw new NotImplementedException();
+            message = $"Appended {request.Entries.Length} entries at position {request.PreviousLogIndex + 1}";
+            TheTrace.TraceInformation(message);
+            return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true, message));
         }
 
         /// <inheritdoc />
         public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
-            throw new NotImplementedException();
+            _persister.WriteSnapshot(request.LastIncludedIndex, request.Data, request.Offset, request.IsDone);
+            return Task.FromResult(new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm });
         }
 
         /// <inheritdoc />

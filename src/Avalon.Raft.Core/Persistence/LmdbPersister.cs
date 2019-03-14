@@ -230,7 +230,6 @@ namespace Avalon.Raft.Core.Persistence
                 var newOffset = lastIncludedIndex + 1;
                 TruncateLogUpToIndex(newOffset);
                 FinaliseSnapshot(lastIncludedIndex);
-                File.Move(_snapMgr.GetTempFileNameForIndex(lastIncludedIndex), _snapMgr.GetFinalFileNameForIndex(lastIncludedIndex));
             }
         }
 
@@ -330,7 +329,7 @@ namespace Avalon.Raft.Core.Persistence
                 snapshot = new Snapshot()
                 {
                     LastIncludedIndex = index.Value,
-                    Stream = new FileStream(_snapMgr.GetFinalFileNameForIndex(index.Value), FileMode.Open)
+                    FullName = _snapMgr.GetFinalFileNameForIndex(index.Value)
                 };
 
             return index.HasValue;

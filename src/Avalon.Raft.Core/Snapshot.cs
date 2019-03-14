@@ -13,7 +13,7 @@ namespace Avalon.Raft.Core
         /// <summary>
         /// Full name
         /// </summary>
-        public Stream Stream { get; set; }
+        public string FullName { get; set; }
 
         /// <summary>
         /// Last index of the log which has been applied to the State Machine

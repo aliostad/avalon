@@ -199,6 +199,34 @@ namespace Avalon.Raft.Core.Tests
             Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(lastIncludedIndex, 1));
         }
 
+        [Fact]
+        public void CanDoSnapshotLikeAKing()
+        {
+            LogEntry l = new LogEntry()
+            {
+                Body = new byte[] { 1, 2, 3, 4 },
+                Term = 42L
+            };
+
+            _persister.Append(new[] { l }, 0);
+            _persister.Append(new[] { l }, 1);
+            _persister.Append(new[] { l }, 2);
+            _persister.Append(new[] { l }, 3);
+            _persister.Append(new[] { l }, 4);
+            _persister.Append(new[] { l }, 5);
+
+
+            _persister.WriteSnapshot(4, new byte[] { 1 }, 0, false);
+            _persister.WriteSnapshot(4, new byte[] { 2 }, 1, false);
+            _persister.WriteSnapshot(4, new byte[] { 3 }, 2, false);
+            _persister.WriteSnapshot(4, new byte[] { 4 }, 3, true);
+
+            Assert.Equal(5, _persister.LogOffset);
+            Snapshot snap;
+            _persister.TryGetLastSnapshot(out snap);
+            Assert.Equal(4, snap.LastIncludedIndex);
+        }
+
         public void Dispose()
         {
             _persister.Dispose();
