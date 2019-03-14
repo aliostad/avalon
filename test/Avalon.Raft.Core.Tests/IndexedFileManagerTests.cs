@@ -7,7 +7,7 @@ using Xunit;
 
 namespace Avalon.Raft.Core.Tests
 {
-    public class IndexedFileManagerTests
+    public class IndexedFileManagerTests : IDisposable
     {
         private readonly string _directory;
         private readonly IndexedFileManager _mgr;
@@ -16,6 +16,11 @@ namespace Avalon.Raft.Core.Tests
         {
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             _mgr = new IndexedFileManager(_directory);
+        }
+
+        public void Dispose()
+        {
+            Directory.Delete(_directory, true);
         }
 
         [Fact]
@@ -72,11 +77,6 @@ namespace Avalon.Raft.Core.Tests
             foreach (var f in perv)
                 Assert.True(_mgr.GetSnapshotIndex(f) < index);
 
-        }
-
-        ~IndexedFileManagerTests()
-        {
-            Directory.Delete(_directory, true);
         }
     }
 }

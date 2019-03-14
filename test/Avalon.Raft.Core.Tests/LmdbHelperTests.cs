@@ -9,7 +9,7 @@ using System.Diagnostics;
 
 namespace Avalon.Raft.Core.Tests
 {
-    public class LmdbHelperTests
+    public class LmdbHelperTests : IDisposable
     {
         private readonly string _directory;
         protected LMDBEnvironment _env;
@@ -165,14 +165,14 @@ namespace Avalon.Raft.Core.Tests
             }
         }
 
-        ~LmdbHelperTests()
+        public void Dispose()
         {
             try
             {
                 _env.Close();
                 Directory.Delete(_directory, true);
             }
-            catch(Exception e)
+            catch (Exception e)
             {
                 Trace.TraceWarning(e.ToString());
             }

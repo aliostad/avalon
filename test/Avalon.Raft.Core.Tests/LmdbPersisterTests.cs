@@ -9,7 +9,7 @@ using Xunit;
 
 namespace Avalon.Raft.Core.Tests
 {
-    public class LmdbPersisterTests
+    public class LmdbPersisterTests : IDisposable
     {
         private LmdbPersister _persister;
         private readonly string _directory;
@@ -185,7 +185,7 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(lastIncludedIndex, snap.LastIncludedIndex);
         }
 
-        ~LmdbPersisterTests()
+        public void Dispose()
         {
             _persister.Dispose();
             try
@@ -196,7 +196,6 @@ namespace Avalon.Raft.Core.Tests
             {
                 Console.WriteLine(e.ToString());
             }
-            
         }
     }
 }
