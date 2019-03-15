@@ -10,61 +10,83 @@ namespace Avalon.Raft.Core.Rpc
     {
         protected VolatileState _volatileState = new VolatileState();
         protected Role _role;
-        protected readonly LmdbPersister _persister;
         protected readonly object _lock = new object();
+        protected DateTimeOffset _lastHeartbeat = DateTimeOffset.Now;
+
+        protected readonly IStateMachine _stateMachine;
+        protected readonly ILogPersister _logPersister;
+        protected readonly IStatePersister _statePersister;
 
         public Role Role => _role;
 
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
-        public PersistentState State => _persister.GetLatest();
+        public PersistentState State => _statePersister.GetLatest();
 
-        public DefaultRaftServer(string directory)
+        public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine)
         {
-            _persister = new LmdbPersister(directory);
+            _logPersister = logPersister;
         }
 
         /// <inheritdoc />
         public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
         {
+            _lastHeartbeat = DateTimeOffset.Now;
             string message = null;
-            if (request.Term < State.CurrentTerm)
+
+            if (request.CurrentTerm > State.CurrentTerm)
+                BecomeFollower(request.CurrentTerm);
+
+
+            // Reply false if term < currentTerm (§5.1)
+            if (request.CurrentTerm < State.CurrentTerm)
             {
-                message = $"Leader's term is behind ({request.Term} vs {State.CurrentTerm}).";
+                message = $"Leader's term is behind ({request.CurrentTerm} vs {State.CurrentTerm}).";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
             }
 
-            if (request.PreviousLogIndex > _persister.LastIndex)
+            if (request.PreviousLogIndex > _logPersister.LastIndex)
             {
-                message = $"Position for last log entry is {_persister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
+                message = $"Position for last log entry is {_logPersister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
             }
 
-            if (request.PreviousLogIndex < _persister.LastIndex)
+            if (request.Entries == null || request.Entries.Length == 0)
             {
-                var entry = _persister.GetEntries(request.PreviousLogIndex, 1).First();
-                if (entry.Term != request.Term)
+                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
+            }
+
+            if (request.PreviousLogIndex < _logPersister.LastIndex)
+            {
+                // Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm(§5.3)
+                var entry = _logPersister.GetEntries(request.PreviousLogIndex, 1).First();
+                if (entry.Term != request.CurrentTerm)
                 {
                     message = $"Position at {request.PreviousLogIndex} has term {entry.Term} but according to leader {request.LeaderId} it must be {request.PreviousLogTerm}";
                     TheTrace.TraceWarning(message);
                     return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
                 }
 
-                _persister.DeleteEntries(request.PreviousLogIndex + 1);
-                TheTrace.TraceWarning("Stripping the log from index {0}. Last index was {1}", request.PreviousLogIndex + 1, _persister.LastIndex);
+                // If an existing entry conflicts with a new one(same index but different terms), delete the existing entry and all that follow it(§5.3)
+                _logPersister.DeleteEntries(request.PreviousLogIndex + 1);
+                TheTrace.TraceWarning("Stripping the log from index {0}. Last index was {1}", request.PreviousLogIndex + 1, _logPersister.LastIndex);
             }
-
-            if (request.Entries != null && request.Entries.Length > 0)
+            
+            var entries = request.Entries.Select(x => new LogEntry()
             {
-                var entries = request.Entries.Select(x => new LogEntry()
-                {
-                    Body = x,
-                    Term = request.Term
-                }).ToArray();
+                Body = x,
+                Term = request.CurrentTerm
+            }).ToArray();
 
-                _persister.Append(entries, request.PreviousLogIndex + 1);
+            // Append any new entries not already in the log
+            _logPersister.Append(entries, request.PreviousLogIndex + 1);
+
+            //If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
+            if (request.LeaderCommitIndex > _volatileState.CommitIndex)
+            {
+                _volatileState.CommitIndex = Math.Min(request.LeaderCommitIndex, _logPersister.LastIndex);
             }
 
             message = $"Appended {request.Entries.Length} entries at position {request.PreviousLogIndex + 1}";
@@ -75,13 +97,29 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
-            _persister.WriteSnapshot(request.LastIncludedIndex, request.Data, request.Offset, request.IsDone);
+            if (request.CurrentTerm > State.CurrentTerm)
+                BecomeFollower(request.CurrentTerm);
+
+            _logPersister.WriteSnapshot(request.LastIncludedIndex, request.Data, request.Offset, request.IsDone);
+            if (request.IsDone)
+            {
+                // TODO: rebuild state from snapshot
+            }
+
             return Task.FromResult(new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm });
+        }
+
+        private void BecomeFollower(long term)
+        {
+
         }
 
         /// <inheritdoc />
         public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
         {
+            if (request.CurrentTerm > State.CurrentTerm)
+                BecomeFollower(request.CurrentTerm);
+
             if (State.CurrentTerm > request.CurrentTerm)
                 return Task.FromResult(new RequestVoteResponse()
                 {

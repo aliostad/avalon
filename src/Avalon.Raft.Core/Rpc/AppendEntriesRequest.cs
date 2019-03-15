@@ -12,7 +12,7 @@ namespace Avalon.Raft.Core.Rpc
         /// <summary>
         /// Term of leader
         /// </summary>
-        public long Term { get; set; }
+        public long CurrentTerm { get; set; }
 
         /// <summary>
         /// so follower can redirect clients
