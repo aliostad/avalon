@@ -120,6 +120,7 @@ namespace Avalon.Raft.Core.Rpc
             if (request.CurrentTerm > State.CurrentTerm)
                 BecomeFollower(request.CurrentTerm);
 
+            // Reply false if term < currentTerm
             if (State.CurrentTerm > request.CurrentTerm)
                 return Task.FromResult(new RequestVoteResponse()
                 {
@@ -127,7 +128,8 @@ namespace Avalon.Raft.Core.Rpc
                     VoteGranted = false
                 });
 
-            if (!State.LastVotedForId.HasValue || _volatileState.CommitIndex <= request.LastLogIndex)
+            // If votedFor is null or candidateId, and candidate’s log is at least as up - to - date as receiver’s log, grant vote(§5.2, §5.4)
+            if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
                 return Task.FromResult(new RequestVoteResponse()
                 {
                     CurrentTrem = State.CurrentTerm,
