@@ -58,6 +58,21 @@ namespace Avalon.Raft.Core
             }
         }
 
+        public static void TraceError(string message)
+        {
+            Tracer(TraceLevel.Error, message, new string[0]);
+        }
+
+        public static void TraceWarning(string message)
+        {
+            Tracer(TraceLevel.Warning, message, new string[0]);
+        }
+
+        public static void TraceInformation(string message)
+        {
+            Tracer(TraceLevel.Info, message, new string[0]);
+        }
+
         public static void TraceError(string message, params object[] parameters)
         {
             Tracer(TraceLevel.Error, message, parameters);
