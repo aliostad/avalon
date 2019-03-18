@@ -10,9 +10,7 @@ namespace Avalon.Raft.Core.Scheduling
 {
     public interface IJob
     {
-        Task DoAsync();
-
-        void Cancel();
+        Task DoAsync(CancellationToken token);
 
         Exception FinalException { get; }
     }
@@ -22,29 +20,22 @@ namespace Avalon.Raft.Core.Scheduling
         private readonly Func<CancellationToken, Task> _work;
         private readonly Action _callback;
         private readonly AsyncRetryPolicy _policy;
-        private readonly CancellationTokenSource _cancel;
 
         public Exception FinalException { private set; get; }
 
-        public Job(Func<CancellationToken, Task> work, Action callback, AsyncRetryPolicy policy)
+        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy, Action callback = null) 
         {
             _work = work;
             _callback = callback;
             _policy = policy;
-            _cancel = new CancellationTokenSource();
         }
 
-        public void Cancel()
+        public async Task DoAsync(CancellationToken token)
         {
-            _cancel.Cancel();
-        }
-
-        public async Task DoAsync()
-        {
-            var result = await _policy.ExecuteAndCaptureAsync(_work, _cancel.Token);
+            var result = await _policy.ExecuteAndCaptureAsync(_work, token);
             if (result.Outcome == OutcomeType.Successful)
             {
-                _callback();
+                _callback?.Invoke();
             }
             else
             {
@@ -58,29 +49,22 @@ namespace Avalon.Raft.Core.Scheduling
         private readonly Func<CancellationToken, Task<T>> _work;
         private readonly Action<T> _callback;
         private readonly AsyncRetryPolicy<T> _policy;
-        private readonly CancellationTokenSource _cancel;
 
-        public Job(Func<CancellationToken, Task<T>> work, Action<T> callback, AsyncRetryPolicy<T> policy)
+        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy<T> policy, Action<T> callback = null)
         {
             _work = work;
             _callback = callback;
             _policy = policy;
-            _cancel = new CancellationTokenSource();
         }
 
         public Exception FinalException { private set; get; }
 
-        public void Cancel()
+        public async Task DoAsync(CancellationToken token)
         {
-            _cancel.Cancel();
-        }
-
-        public async Task DoAsync()
-        {
-            var result = await _policy.ExecuteAndCaptureAsync(_work, _cancel.Token);
+            var result = await _policy.ExecuteAndCaptureAsync(_work, token);
             if (result.Outcome == OutcomeType.Successful)
             {
-                _callback(result.Result);
+                _callback?.Invoke(result.Result);
             }
             else
             {
