@@ -1,4 +1,5 @@
-﻿using System;
+﻿using Polly;
+using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Text;
@@ -88,6 +89,16 @@ namespace Avalon.Raft.Core
             Tracer(TraceLevel.Info, message, parameters);
         }
 
+        public static bool HandleException(Exception e, string extraInfo = null)
+        {
+            TraceWarning("{0}Handling exception: {1}", extraInfo ?? string.Empty, e);
+            return true;
+        }
+
+        public static PolicyBuilder LogPolicy()
+        {
+            return Policy.Handle<Exception>((e) => HandleException(e, "(Polly/Try/Retry) "));
+        }
     }
 
 }

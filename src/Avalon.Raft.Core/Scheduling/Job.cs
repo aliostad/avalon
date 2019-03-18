@@ -19,19 +19,28 @@ namespace Avalon.Raft.Core.Scheduling
     {
         private readonly Func<CancellationToken, Task> _work;
         private readonly AsyncRetryPolicy _policy;
+        private readonly Action _callback;
 
         public Exception FinalException { private set; get; }
 
-        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy) 
+        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy, Action callback = null) 
         {
             _work = work;
             _policy = policy;
+            _callback = callback;
         }
 
         public async Task DoAsync(CancellationToken token)
         {
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
-            FinalException = result.FinalException;
+            if (result.Outcome == OutcomeType.Successful)
+            {
+                _callback?.Invoke();
+            }
+            else
+            {
+                FinalException = result.FinalException;
+            }
         }
     }
 
@@ -39,12 +48,13 @@ namespace Avalon.Raft.Core.Scheduling
     {
         private readonly Func<CancellationToken, Task<T>> _work;
         private readonly Action<T> _callback;
-        private readonly AsyncRetryPolicy<T> _policy;
+        private readonly AsyncRetryPolicy _policy;
 
-        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy<T> policy)
+        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy policy, Action<T> callback = null)
         {
             _work = work;
             _policy = policy;
+            _callback = callback;
         }
 
         public Exception FinalException { private set; get; }
@@ -52,7 +62,14 @@ namespace Avalon.Raft.Core.Scheduling
         public async Task DoAsync(CancellationToken token)
         {
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
-            FinalException = result.FinalException;
+            if (result.Outcome == OutcomeType.Successful)
+            {
+                _callback?.Invoke(result.Result);
+            }
+            else
+            {
+                FinalException = result.FinalException;
+            }
         }
     }
 }

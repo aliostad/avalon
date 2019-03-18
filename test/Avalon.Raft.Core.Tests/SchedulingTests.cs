@@ -18,13 +18,9 @@ namespace Avalon.Raft.Core.Tests
         {
             var maths = new Worker("maths");
             var ran = false;
-            var job = new Job<int>(c => Task.FromResult(2 + 2), 
-                Policy.HandleResult<int>((result) =>
-                {
-                    ran = true;
-                    return 4 == result;
-                }).RetryForeverAsync<int>()
-            );
+
+            var job = new Job<int>(c => Task.FromResult(2 + 2),
+               TheTrace.LogPolicy().RetryForeverAsync(), (n) => { ran = true; });
 
             maths.Start();
             maths.Enqueue(job);
@@ -42,22 +38,41 @@ namespace Avalon.Raft.Core.Tests
             {
                 if (timesForExceptions-- > 0)
                     throw new ApplicationException();
-
+                ran = true;
                 return Task.FromResult(2 + 2);
             },
-                Policy
-                .Handle<Exception>()
-                .OrResult<int>((result) =>
-                {
-                    ran = true;
-                    return 4 == result;
-                }).RetryForeverAsync()
+               TheTrace.LogPolicy().RetryForeverAsync()
             );
 
             maths.Start();
             maths.Enqueue(job);
             Thread.Sleep(1000);
             Assert.True(ran);
+        }
+
+        [Fact]
+        public async Task CanAdd2And2ThousandTimes()
+        {
+            
+            var maths = new Worker("maths");
+            var ran = 0;
+            var job = new Job<int>(c =>
+            {
+                ran++;
+                return Task.FromResult(2 + 2);
+            },
+                TheTrace.LogPolicy()
+                .RetryForeverAsync()
+            );
+
+            maths.Start();
+            for (int i = 0; i < 1000; i++)
+            {
+                maths.Enqueue(job);
+            }
+
+            Thread.Sleep(10000);
+            Assert.Equal(1000, ran);
         }
 
     }
