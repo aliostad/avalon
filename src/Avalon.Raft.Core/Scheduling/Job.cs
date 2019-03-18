@@ -18,29 +18,20 @@ namespace Avalon.Raft.Core.Scheduling
     public class Job : IJob
     {
         private readonly Func<CancellationToken, Task> _work;
-        private readonly Action _callback;
         private readonly AsyncRetryPolicy _policy;
 
         public Exception FinalException { private set; get; }
 
-        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy, Action callback = null) 
+        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy) 
         {
             _work = work;
-            _callback = callback;
             _policy = policy;
         }
 
         public async Task DoAsync(CancellationToken token)
         {
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
-            if (result.Outcome == OutcomeType.Successful)
-            {
-                _callback?.Invoke();
-            }
-            else
-            {
-                FinalException = result.FinalException;
-            }
+            FinalException = result.FinalException;
         }
     }
 
@@ -50,10 +41,9 @@ namespace Avalon.Raft.Core.Scheduling
         private readonly Action<T> _callback;
         private readonly AsyncRetryPolicy<T> _policy;
 
-        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy<T> policy, Action<T> callback = null)
+        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy<T> policy)
         {
             _work = work;
-            _callback = callback;
             _policy = policy;
         }
 
@@ -62,14 +52,7 @@ namespace Avalon.Raft.Core.Scheduling
         public async Task DoAsync(CancellationToken token)
         {
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
-            if (result.Outcome == OutcomeType.Successful)
-            {
-                _callback?.Invoke(result.Result);
-            }
-            else
-            {
-                FinalException = result.FinalException;
-            }
+            FinalException = result.FinalException;
         }
     }
 }

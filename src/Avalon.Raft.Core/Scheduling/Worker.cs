@@ -7,7 +7,7 @@ using System.Threading.Tasks;
 
 namespace Avalon.Raft.Core.Scheduling
 {
-    public class Worker
+    public class Worker : IDisposable
     {
         private readonly BlockingCollection<IJob> _q = new BlockingCollection<IJob>();
         private CancellationTokenSource _cancel;
@@ -76,6 +76,11 @@ namespace Avalon.Raft.Core.Scheduling
                     TheTrace.TraceError($"Job errored: {e}");
                 }
             }
+        }
+
+        public void Dispose()
+        {
+            Stop();
         }
     }
 }
