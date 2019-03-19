@@ -32,16 +32,19 @@ namespace Avalon.Raft.Core.Scheduling
             }
         }
 
+        public bool IsEmpty(string queueName)
+        {
+            return _workers[queueName].QueueDepth == 0;
+        }
+
         public void AddWorker(string name)
         {
             _workers.TryAdd(name, new Worker(name));
         }
 
-        //public Worker this[string name] => _workers[name];
-
-        public void Enqueue(string name, IJob job)
+        public void Enqueue(string queueName, IJob job)
         {
-            _workers[name].Enqueue(job);
+            _workers[queueName].Enqueue(job);
         }
 
         public bool RemoveWorker(string name)

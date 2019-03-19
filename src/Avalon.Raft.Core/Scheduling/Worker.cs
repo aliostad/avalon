@@ -19,7 +19,10 @@ namespace Avalon.Raft.Core.Scheduling
         }
 
         public bool IsRunning { private set; get; }
+
         public string Name { private set; get; }
+
+        public int QueueDepth => _q.Count;
 
         public void Start()
         {

@@ -1,13 +1,30 @@
 ﻿using Avalon.Raft.Core.Persistence;
+using Avalon.Raft.Core.Scheduling;
 using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
+using Polly;
+using Polly.Retry;
+using System.Threading;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public class DefaultRaftServer : IRaftServer
+    public class DefaultRaftServer : IRaftServer, IDisposable
     {
+        class Queues
+        {
+            public const string PeerAppendLog = "Peer-AppendLog-";
+            public const string PeerVote = "Peer-Vote-";
+            public const string PeerFactory = "PeerFactory-";
+            public const string LogCommit = "LogCommit";
+        }
+
+        class Timeouts
+        {
+            public static readonly TimeSpan LogCommitFactory = TimeSpan.FromMilliseconds(100);
+        }
+
         protected VolatileState _volatileState = new VolatileState();
         protected Role _role;
         protected readonly object _lock = new object();
@@ -16,6 +33,11 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly IStateMachine _stateMachine;
         protected readonly ILogPersister _logPersister;
         protected readonly IStatePersister _statePersister;
+        protected readonly IPeerManager _peerManager;
+        protected readonly RaftSettings _settings;
+        protected int _candidateVotes;
+        protected WorkerPool _workers;
+
 
         public Role Role => _role;
 
@@ -23,9 +45,108 @@ namespace Avalon.Raft.Core.Rpc
 
         public PersistentState State => _statePersister.GetLatest();
 
-        public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine)
+        public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine,
+            IPeerManager peerManager, RaftSettings settings)
         {
             _logPersister = logPersister;
+            _peerManager = peerManager;
+            _stateMachine = stateMachine;
+            _statePersister = statePersister;
+            _settings = settings;
+            SetupPool();
+        }
+
+        private void SetupPool()
+        {
+            var names = new List<string>();
+            foreach (var p in _peerManager.GetPeers())
+            {
+                names.Add(Queues.PeerAppendLog + p.Address);
+                names.Add(Queues.PeerFactory + p.Address);
+            }
+
+            names.Add(Queues.LogCommit);
+
+            _workers = new WorkerPool(names.ToArray());
+            _workers.Start();
+
+            // LogCommit
+            _workers.Enqueue(Queues.LogCommit, 
+                new Job(ComposeLooper(LogCommit, Timeout.InfiniteTimeSpan),
+                TheTrace.LogPolicy().RetryForeverAsync()));
+        }
+        
+        
+        private async Task LogCommit()
+        {
+            // IMPORTANTE!! SIEMPERE CREATE VARIABLES LOCALES
+            var commitIndex = _volatileState.CommitIndex;
+            var lastApplied = _volatileState.LastApplied;
+
+            if (commitIndex > lastApplied && _workers.IsEmpty(Queues.LogCommit)) // check ONLY if empty. NO RE-ENTRY
+            {
+                // ADD BATCHING LATER
+                await _stateMachine.ApplyAsync(
+                    _logPersister.GetEntries(lastApplied + 1, (int) (commitIndex - lastApplied)));
+
+                _volatileState.LastApplied = commitIndex;
+            }
+        }
+
+        private Func<CancellationToken, Task> ComposeOneOff(Action action)
+        {
+            return (c) =>
+            {
+                if (!c.IsCancellationRequested)
+                {
+                    action();
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeOneOff(Func<Task> action)
+        {
+            return (c) =>
+            {
+                if (!c.IsCancellationRequested)
+                {
+                    return action();
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeLooper(Action action, TimeSpan timeout)
+        {
+            return (c) =>
+            {
+                while (!c.IsCancellationRequested)
+                {
+                    if (!c.WaitHandle.WaitOne(timeout))
+                    {
+                        action();
+                    }
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeLooper(Func<Task> action, TimeSpan timeout)
+        {
+            return async (c) =>
+            {
+                while (!c.IsCancellationRequested)
+                {
+                    if (!c.WaitHandle.WaitOne(timeout))
+                    {
+                        await action();
+                    }
+                }
+            };
         }
 
         /// <inheritdoc />
@@ -142,6 +263,11 @@ namespace Avalon.Raft.Core.Rpc
                 CurrentTrem = State.CurrentTerm,
                 VoteGranted = false
             });
+        }
+
+        public void Dispose()
+        {
+            _workers.Stop();
         }
     }
 }
