@@ -276,7 +276,7 @@ namespace Avalon.Raft.Core.Persistence
         public void SaveLastVotedFor(Guid id)
         {
             lock (_lock) // TODO: unnecessary probably
-        {
+            {
                 using (var tx = _env.BeginTransaction())
                 {
                     tx.Put(_stateDb, StateDbKeys.LastVotedFor, id);
@@ -336,9 +336,17 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public PersistentState GetLatest()
+        public void SaveTerm(long newTrem)
         {
-            return _state;
+            lock (_lock) // TODO: unnecessary probably
+            {
+                using (var tx = _env.BeginTransaction())
+                {
+                    tx.Put(_stateDb, StateDbKeys.CurrentTerm, newTrem);
+                    tx.Commit();
+                    _state.CurrentTerm = newTrem;
+                }
+            }
         }
     }
 }

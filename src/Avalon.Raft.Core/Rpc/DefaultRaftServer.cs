@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Polly;
 using Polly.Retry;
+using Polly.Timeout;
 using System.Threading;
 
 namespace Avalon.Raft.Core.Rpc
@@ -18,6 +19,8 @@ namespace Avalon.Raft.Core.Rpc
             public const string PeerVote = "Peer-Vote-";
             public const string PeerFactory = "PeerFactory-";
             public const string LogCommit = "LogCommit";
+            public const string HeartBeatReceive = "HeartBeatReceive";
+            public const string Candidacy = "Candidacy";
         }
 
         class Timeouts
@@ -32,18 +35,18 @@ namespace Avalon.Raft.Core.Rpc
 
         protected readonly IStateMachine _stateMachine;
         protected readonly ILogPersister _logPersister;
-        protected readonly IStatePersister _statePersister;
         protected readonly IPeerManager _peerManager;
         protected readonly RaftSettings _settings;
         protected int _candidateVotes;
         protected WorkerPool _workers;
+        protected readonly AutoPersistentState _state;
+
 
 
         public Role Role => _role;
+        public PersistentState State => _state;
 
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
-
-        public PersistentState State => _statePersister.GetLatest();
 
         public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine,
             IPeerManager peerManager, RaftSettings settings)
@@ -51,8 +54,8 @@ namespace Avalon.Raft.Core.Rpc
             _logPersister = logPersister;
             _peerManager = peerManager;
             _stateMachine = stateMachine;
-            _statePersister = statePersister;
             _settings = settings;
+            _state = new AutoPersistentState(statePersister);
             SetupPool();
         }
 
@@ -62,7 +65,7 @@ namespace Avalon.Raft.Core.Rpc
             foreach (var p in _peerManager.GetPeers())
             {
                 names.Add(Queues.PeerAppendLog + p.Address);
-                names.Add(Queues.PeerFactory + p.Address);
+                names.Add(Queues.PeerVote + p.Address);
             }
 
             names.Add(Queues.LogCommit);
@@ -74,8 +77,55 @@ namespace Avalon.Raft.Core.Rpc
             _workers.Enqueue(Queues.LogCommit, 
                 new Job(ComposeLooper(LogCommit, Timeout.InfiniteTimeSpan),
                 TheTrace.LogPolicy().RetryForeverAsync()));
+
+            _workers.Enqueue(Queues.LogCommit,
+                new Job(ComposeLooper(Candidacy, Timeout.InfiniteTimeSpan),
+                TheTrace.LogPolicy().RetryForeverAsync()));
+
         }
-        
+
+        private async Task Candidacy()
+        {
+            var forMe = 1; // vote for yourself
+            var againstMe = 0;
+
+            while (_role == Role.Candidate)
+            {
+                var peers = _peerManager.GetPeers().ToArray();
+                var concensus = (peers.Length / 2) + 1;
+                var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
+                var retry = TheTrace.LogPolicy().RetryForeverAsync();
+                var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
+                var request = new RequestVoteRequest()
+                {
+                    CandidateId = State.Id,
+                    CurrentTerm = State.CurrentTerm,
+                    LastLogIndex = _logPersister.LastIndex,
+                    LastLogTerm = _logPersister.LastEntryTerm
+                };
+
+                var all = await Task.WhenAll(proxies.Select(p => policy.ExecuteAndCaptureAsync(() => p.RequestVoteAsync(request))));
+                var maxTerm = 0L;
+                foreach (var r in all)
+                {
+                    if (r.Outcome == OutcomeType.Successful)
+                    {
+                        if (r.Result.CurrentTrem > maxTerm)
+                            maxTerm = r.Result.CurrentTrem;
+
+                        if (r.Result != null && r.Result.VoteGranted)
+                            forMe++;
+                        else
+                            againstMe++;
+                    }
+                }
+
+                if (againstMe >= concensus)
+                    BecomeFollower(maxTerm);
+                else if (forMe >= concensus)
+                    BecomeLeader();
+            }
+        }
         
         private async Task LogCommit()
         {
@@ -91,62 +141,6 @@ namespace Avalon.Raft.Core.Rpc
 
                 _volatileState.LastApplied = commitIndex;
             }
-        }
-
-        private Func<CancellationToken, Task> ComposeOneOff(Action action)
-        {
-            return (c) =>
-            {
-                if (!c.IsCancellationRequested)
-                {
-                    action();
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeOneOff(Func<Task> action)
-        {
-            return (c) =>
-            {
-                if (!c.IsCancellationRequested)
-                {
-                    return action();
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeLooper(Action action, TimeSpan timeout)
-        {
-            return (c) =>
-            {
-                while (!c.IsCancellationRequested)
-                {
-                    if (!c.WaitHandle.WaitOne(timeout))
-                    {
-                        action();
-                    }
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeLooper(Func<Task> action, TimeSpan timeout)
-        {
-            return async (c) =>
-            {
-                while (!c.IsCancellationRequested)
-                {
-                    if (!c.WaitHandle.WaitOne(timeout))
-                    {
-                        await action();
-                    }
-                }
-            };
         }
 
         /// <inheritdoc />
@@ -232,8 +226,19 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeFollower(long term)
         {
-
+            _role = Role.Follower;
         }
+
+        private void BecomeLeader()
+        {
+            _role = Role.Leader;
+        }
+
+        private void BecomeCandidate()
+        {
+            _role = Role.Candidate;
+        }
+
 
         /// <inheritdoc />
         public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
@@ -269,5 +274,65 @@ namespace Avalon.Raft.Core.Rpc
         {
             _workers.Stop();
         }
+
+        #region Composition
+
+        private Func<CancellationToken, Task> ComposeOneOff(Action action)
+        {
+            return (c) =>
+            {
+                if (!c.IsCancellationRequested)
+                {
+                    action();
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeOneOff(Func<Task> action)
+        {
+            return (c) =>
+            {
+                if (!c.IsCancellationRequested)
+                {
+                    return action();
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeLooper(Action action, TimeSpan timeout)
+        {
+            return (c) =>
+            {
+                while (!c.IsCancellationRequested)
+                {
+                    if (!c.WaitHandle.WaitOne(timeout))
+                    {
+                        action();
+                    }
+                }
+
+                return Task.CompletedTask;
+            };
+        }
+
+        private Func<CancellationToken, Task> ComposeLooper(Func<Task> action, TimeSpan timeout)
+        {
+            return async (c) =>
+            {
+                while (!c.IsCancellationRequested)
+                {
+                    if (!c.WaitHandle.WaitOne(timeout))
+                    {
+                        await action();
+                    }
+                }
+            };
+        }
+        #endregion
+
     }
 }

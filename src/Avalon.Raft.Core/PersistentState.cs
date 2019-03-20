@@ -17,11 +17,11 @@ namespace Avalon.Raft.Core
 
         public Guid Id { get; set; }
 
-        public long CurrentTerm { get; set; }
+        public virtual long CurrentTerm { get; set; }
 
-        public Guid? LastVotedForId { get; set; }
+        public virtual Guid? LastVotedForId { get; set; }
 
-        public void IncrementTerm()
+        public virtual void IncrementTerm()
         {
             CurrentTerm += 1;
             LastVotedForId = null;

@@ -18,12 +18,12 @@ namespace Avalon.Raft.Core.Scheduling
     public class Job : IJob
     {
         private readonly Func<CancellationToken, Task> _work;
-        private readonly AsyncRetryPolicy _policy;
+        private readonly AsyncPolicy _policy;
         private readonly Action _callback;
 
         public Exception FinalException { private set; get; }
 
-        public Job(Func<CancellationToken, Task> work, AsyncRetryPolicy policy, Action callback = null) 
+        public Job(Func<CancellationToken, Task> work, AsyncPolicy policy, Action callback = null) 
         {
             _work = work;
             _policy = policy;
@@ -48,9 +48,9 @@ namespace Avalon.Raft.Core.Scheduling
     {
         private readonly Func<CancellationToken, Task<T>> _work;
         private readonly Action<T> _callback;
-        private readonly AsyncRetryPolicy _policy;
+        private readonly AsyncPolicy _policy;
 
-        public Job(Func<CancellationToken, Task<T>> work, AsyncRetryPolicy policy, Action<T> callback = null)
+        public Job(Func<CancellationToken, Task<T>> work, AsyncPolicy policy, Action<T> callback = null)
         {
             _work = work;
             _policy = policy;
