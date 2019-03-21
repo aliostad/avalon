@@ -42,11 +42,12 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly AutoPersistentState _state;
 
 
-
         public Role Role => _role;
         public PersistentState State => _state;
 
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
+
+        #region .ctore and setup
 
         public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine,
             IPeerManager peerManager, RaftSettings settings)
@@ -84,6 +85,9 @@ namespace Avalon.Raft.Core.Rpc
 
         }
 
+        #endregion
+
+        #region Work Streams
         private async Task Candidacy()
         {
             var forMe = 1; // vote for yourself
@@ -126,7 +130,7 @@ namespace Avalon.Raft.Core.Rpc
                     BecomeLeader();
             }
         }
-        
+
         private async Task LogCommit()
         {
             // IMPORTANTE!! SIEMPERE CREATE VARIABLES LOCALES
@@ -137,11 +141,15 @@ namespace Avalon.Raft.Core.Rpc
             {
                 // ADD BATCHING LATER
                 await _stateMachine.ApplyAsync(
-                    _logPersister.GetEntries(lastApplied + 1, (int) (commitIndex - lastApplied)));
+                    _logPersister.GetEntries(lastApplied + 1, (int)(commitIndex - lastApplied)));
 
                 _volatileState.LastApplied = commitIndex;
             }
         }
+
+        #endregion
+
+        #region RPC
 
         /// <inheritdoc />
         public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
@@ -188,7 +196,7 @@ namespace Avalon.Raft.Core.Rpc
                 _logPersister.DeleteEntries(request.PreviousLogIndex + 1);
                 TheTrace.TraceWarning("Stripping the log from index {0}. Last index was {1}", request.PreviousLogIndex + 1, _logPersister.LastIndex);
             }
-            
+
             var entries = request.Entries.Select(x => new LogEntry()
             {
                 Body = x,
@@ -224,22 +232,6 @@ namespace Avalon.Raft.Core.Rpc
             return Task.FromResult(new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm });
         }
 
-        private void BecomeFollower(long term)
-        {
-            _role = Role.Follower;
-        }
-
-        private void BecomeLeader()
-        {
-            _role = Role.Leader;
-        }
-
-        private void BecomeCandidate()
-        {
-            _role = Role.Candidate;
-        }
-
-
         /// <inheritdoc />
         public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
         {
@@ -270,10 +262,27 @@ namespace Avalon.Raft.Core.Rpc
             });
         }
 
-        public void Dispose()
+
+        #endregion
+
+        #region Role Chnages
+
+        private void BecomeFollower(long term)
         {
-            _workers.Stop();
+            _role = Role.Follower;
         }
+
+        private void BecomeLeader()
+        {
+            _role = Role.Leader;
+        }
+
+        private void BecomeCandidate()
+        {
+            _role = Role.Candidate;
+        }
+
+        #endregion
 
         #region Composition
 
@@ -334,5 +343,9 @@ namespace Avalon.Raft.Core.Rpc
         }
         #endregion
 
+        public void Dispose()
+        {
+            _workers.Stop();
+        }
     }
 }
