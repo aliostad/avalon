@@ -23,11 +23,6 @@ namespace Avalon.Raft.Core.Rpc
             public const string Candidacy = "Candidacy";
         }
 
-        class Timeouts
-        {
-            public static readonly TimeSpan LogCommitFactory = TimeSpan.FromMilliseconds(100);
-        }
-
         protected VolatileState _volatileState = new VolatileState();
         protected Role _role;
         protected readonly object _lock = new object();
@@ -69,17 +64,26 @@ namespace Avalon.Raft.Core.Rpc
             }
 
             names.Add(Queues.LogCommit);
+            names.Add(Queues.Candidacy);
+            names.Add(Queues.HeartBeatReceive);
 
             _workers = new WorkerPool(names.ToArray());
             _workers.Start();
 
             // LogCommit
+            Func<Task> logCommit = LogCommit;
             _workers.Enqueue(Queues.LogCommit, 
-                new Job(ComposeLooper(LogCommit, Timeout.InfiniteTimeSpan),
+                new Job(logCommit.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
-            _workers.Enqueue(Queues.LogCommit,
-                new Job(ComposeLooper(Candidacy, Timeout.InfiniteTimeSpan),
+            Func<Task> candidacy = Candidacy;
+            _workers.Enqueue(Queues.Candidacy,
+                new Job(candidacy.ComposeLooper(_settings.CandidacyTimeout),
+                TheTrace.LogPolicy().RetryForeverAsync()));
+
+            Func<Task> hbr = HeartBeatReceive;
+            _workers.Enqueue(Queues.HeartBeatReceive,
+                new Job(hbr.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
         }
@@ -88,13 +92,15 @@ namespace Avalon.Raft.Core.Rpc
 
         #region Work Streams
 
-        private async Task HeartBeatReceive()
+        private Task HeartBeatReceive()
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds);
             if (_role == Role.Follower && DateTimeOffset.Now.Subtract(_lastHeartbeat).TotalMilliseconds > millis)
             {
                 BecomeCandidate();
             }
+
+            return Task.CompletedTask;
         }
 
         private async Task Candidacy()
@@ -276,80 +282,26 @@ namespace Avalon.Raft.Core.Rpc
 
         #region Role Chnages
 
+        protected void OnRoleChanged(Role role)
+        {
+            RoleChanged?.Invoke(this, new RoleChangedEventArgs(role));
+        }
+
         private void BecomeFollower(long term)
         {
-            _role = Role.Follower;
+            OnRoleChanged(_role = Role.Follower);
         }
 
         private void BecomeLeader()
         {
-            _role = Role.Leader;
+            OnRoleChanged(_role = Role.Leader);
         }
 
         private void BecomeCandidate()
         {
-            _role = Role.Candidate;
+            OnRoleChanged(_role = Role.Candidate);
         }
 
-        #endregion
-
-        #region Composition
-
-        private Func<CancellationToken, Task> ComposeOneOff(Action action)
-        {
-            return (c) =>
-            {
-                if (!c.IsCancellationRequested)
-                {
-                    action();
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeOneOff(Func<Task> action)
-        {
-            return (c) =>
-            {
-                if (!c.IsCancellationRequested)
-                {
-                    return action();
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeLooper(Action action, TimeSpan timeout)
-        {
-            return (c) =>
-            {
-                while (!c.IsCancellationRequested)
-                {
-                    if (!c.WaitHandle.WaitOne(timeout))
-                    {
-                        action();
-                    }
-                }
-
-                return Task.CompletedTask;
-            };
-        }
-
-        private Func<CancellationToken, Task> ComposeLooper(Func<Task> action, TimeSpan timeout)
-        {
-            return async (c) =>
-            {
-                while (!c.IsCancellationRequested)
-                {
-                    if (!c.WaitHandle.WaitOne(timeout))
-                    {
-                        await action();
-                    }
-                }
-            };
-        }
         #endregion
 
         public void Dispose()

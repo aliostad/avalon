@@ -20,7 +20,7 @@ namespace Avalon.Raft.Core.Scheduling
         {
             foreach (var w in _workers.Values)
             {
-                w.Stop();
+                w.Start();
             }
         }
 
