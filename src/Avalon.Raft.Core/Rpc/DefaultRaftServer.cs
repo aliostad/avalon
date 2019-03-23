@@ -41,7 +41,6 @@ namespace Avalon.Raft.Core.Rpc
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
 
-
         public Role Role => _role;
         public PersistentState State => _state;
 
@@ -88,6 +87,16 @@ namespace Avalon.Raft.Core.Rpc
         #endregion
 
         #region Work Streams
+
+        private async Task HeartBeatReceive()
+        {
+            var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds);
+            if (_role == Role.Follower && DateTimeOffset.Now.Subtract(_lastHeartbeat).TotalMilliseconds > millis)
+            {
+                BecomeCandidate();
+            }
+        }
+
         private async Task Candidacy()
         {
             var forMe = 1; // vote for yourself
