@@ -40,6 +40,18 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(Role.Candidate, _server.Role);
         }
 
+        [Fact]
+        public void FriendlyPeersWithOneAngryNotABigDeal()
+        {
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s }));
+            _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new FriendlyPeer());
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, new RaftSettings());
+
+            Thread.Sleep(1000);
+            Assert.Equal(Role.Leader, _server.Role);
+        }
+
         public void Dispose()
         {
             try
@@ -75,6 +87,54 @@ namespace Avalon.Raft.Core.Tests
             {
                 Thread.Sleep(10000);
                 throw new NotImplementedException();
+            }
+        }
+
+        class AngryPeer : IRaftServer
+        {
+            public Role Role => throw new NotImplementedException();
+
+            public event EventHandler<RoleChangedEventArgs> RoleChanged;
+
+            public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
+            {
+                throw new Exception("I am Angry!");
+            }
+
+            public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
+            {
+                throw new Exception("I am Angry!");
+            }
+
+            public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
+            {
+                throw new Exception("I am Angry!");
+            }
+        }
+
+        class FriendlyPeer : IRaftServer
+        {
+            public Role Role => throw new NotImplementedException();
+
+            public event EventHandler<RoleChangedEventArgs> RoleChanged;
+
+            public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
+            {
+                return Task.FromResult(new RequestVoteResponse()
+                {
+                    CurrentTrem = request.CurrentTerm - 1,
+                    VoteGranted = true
+                });
             }
         }
     }

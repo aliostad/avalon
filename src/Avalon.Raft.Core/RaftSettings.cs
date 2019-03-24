@@ -19,7 +19,7 @@ namespace Avalon.Raft.Core
         /// <summary>
         /// How long candidate waits for RequestVote. Probably 50-100ms
         /// </summary>
-        public TimeSpan CandidacyTimeout { get; set; } = TimeSpan.FromMilliseconds(0);
+        public TimeSpan CandidacyTimeout { get; set; } = TimeSpan.FromMilliseconds(150);
 
         /// <summary>
         /// Minimum index interval between snapshots
