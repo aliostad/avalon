@@ -73,17 +73,17 @@ namespace Avalon.Raft.Core.Rpc
             // LogCommit
             Func<Task> logCommit = LogCommit;
             _workers.Enqueue(Queues.LogCommit, 
-                new Job(logCommit.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/2)),
+                new Job(logCommit.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/5)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
             Func<Task> candidacy = Candidacy;
             _workers.Enqueue(Queues.Candidacy,
-                new Job(candidacy.ComposeLooper(_settings.CandidacyTimeout),
+                new Job(candidacy.ComposeLooper(_settings.CandidacyTimeout.Multiply(1/5)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
             Func<Task> hbr = HeartBeatReceive;
             _workers.Enqueue(Queues.HeartBeatReceive,
-                new Job(hbr.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/2)),
+                new Job(hbr.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(1/5)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
         }
@@ -289,6 +289,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeFollower(long term)
         {
+            _lastHeartbeat = DateTimeOffset.Now; // important not to become candidate again at least for another timeout
             OnRoleChanged(_role = Role.Follower);
         }
 
@@ -299,6 +300,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeCandidate()
         {
+            State.IncrementTerm();
             OnRoleChanged(_role = Role.Candidate);
         }
 

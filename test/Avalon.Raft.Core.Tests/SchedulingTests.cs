@@ -75,12 +75,5 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(1000, ran);
         }
 
-        [Fact]
-        public async Task WorkersWork()
-        {
-
-        }
-
-
     }
 }

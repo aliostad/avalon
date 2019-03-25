@@ -52,6 +52,21 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(Role.Leader, _server.Role);
         }
 
+        [Fact]
+        public void BackStabberPeersMakeYouFollower()
+        {
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s }));
+            _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new BackStabberPeer());
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y == "7"))).Returns(new FriendlyPeer());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            Thread.Sleep(300);
+            Assert.Equal(1, _server.State.CurrentTerm);
+            Assert.Equal(Role.Follower, _server.Role);
+        }
+
         public void Dispose()
         {
             try
@@ -137,5 +152,32 @@ namespace Avalon.Raft.Core.Tests
                 });
             }
         }
+
+        class BackStabberPeer : IRaftServer
+        {
+            public Role Role => throw new NotImplementedException();
+
+            public event EventHandler<RoleChangedEventArgs> RoleChanged;
+
+            public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
+            {
+                return Task.FromResult(new RequestVoteResponse()
+                {
+                    CurrentTrem = request.CurrentTerm ,
+                    VoteGranted = false
+                });
+            }
+        }
+
     }
 }
