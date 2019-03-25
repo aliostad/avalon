@@ -8,7 +8,7 @@ namespace Avalon.Raft.Core.Persistence
     {
         void Save(PersistentState state);
 
-        void SaveLastVotedFor(Guid id);
+        void SaveLastVotedFor(Guid? id);
 
         void SaveTerm(long newTrem);
 

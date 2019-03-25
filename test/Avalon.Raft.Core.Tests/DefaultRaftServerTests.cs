@@ -27,28 +27,38 @@ namespace Avalon.Raft.Core.Tests
             _sister = new LmdbPersister(_directory);
             _manijer = new Mock<IPeerManager>();
             _maqina = new Mock<IStateMachine>();
+            TheTrace.Tracer = (level, s, os) =>
+            {
+                File.AppendAllText("trace.log", String.Format($"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}\r\n")); 
+            };
         }
 
         [Fact]
         public void PerpetualCandidacyWhenDealingWithLazyPeers()
         {
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s} ));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new LazyPeer());
-            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, new RaftSettings());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Thread.Sleep(1000);
+            Thread.Sleep(300);
             Assert.Equal(Role.Candidate, _server.Role);
         }
 
         [Fact]
         public void FriendlyPeersWithOneAngryNotABigDeal()
         {
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s }));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new FriendlyPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
-            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, new RaftSettings());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Thread.Sleep(1000);
+            Thread.Sleep(5000);
             Assert.Equal(Role.Leader, _server.Role);
         }
 
@@ -62,15 +72,21 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y == "7"))).Returns(new FriendlyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
+            TheTrace.TraceInformation("OK, now this is before wait...");
             Thread.Sleep(300);
-            Assert.Equal(1, _server.State.CurrentTerm);
-            Assert.Equal(Role.Follower, _server.Role);
+            TheTrace.TraceInformation("Wait finished.");
+            Assert.True(1 >= _server.State.CurrentTerm);
+            TheTrace.TraceInformation("Checked Term.");
+            Assert.True(Role.Follower == _server.Role || Role.Candidate == _server.Role);
+            TheTrace.TraceInformation("Checked Role.");
         }
 
         public void Dispose()
         {
             try
             {
+                _server.Dispose();
+                Thread.Sleep(100);
                 _sister.Dispose();
                 Directory.Delete(_directory, true);
             }

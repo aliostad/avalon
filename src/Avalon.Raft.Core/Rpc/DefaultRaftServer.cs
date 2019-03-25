@@ -95,8 +95,10 @@ namespace Avalon.Raft.Core.Rpc
         private Task HeartBeatReceive()
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds);
-            if (_role == Role.Follower && DateTimeOffset.Now.Subtract(_lastHeartbeat).TotalMilliseconds > millis)
+            var elapsed = DateTimeOffset.Now.Subtract(_lastHeartbeat).TotalMilliseconds;
+            if (_role == Role.Follower && elapsed> millis)
             {
+                TheTrace.TraceInformation("Timeout for heartbeat: {0}ms. Time for candidacy!", elapsed);
                 BecomeCandidate();
             }
 
@@ -140,9 +142,19 @@ namespace Avalon.Raft.Core.Rpc
                 }
 
                 if (againstMe >= concensus)
+                {
                     BecomeFollower(maxTerm);
+                    TheTrace.TraceInformation("Result of the candidacy for term {0}. I got rejected with {1} votes :/", State.CurrentTerm, againstMe);
+                }
                 else if (forMe >= concensus)
+                {
                     BecomeLeader();
+                    TheTrace.TraceInformation("Result of the candidacy for term {0}. I got elected with {1} votes! :)", State.CurrentTerm, forMe);
+                }
+                else
+                {
+                    TheTrace.TraceInformation("Result of the candidacy for term {0}. Non-conclusive with {1} for me and {2} against me.", State.CurrentTerm, forMe, againstMe);
+                }
             }
         }
 

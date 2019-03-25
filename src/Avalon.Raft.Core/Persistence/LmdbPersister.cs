@@ -96,16 +96,20 @@ namespace Avalon.Raft.Core.Persistence
                     LogOffset = val;
                 }
 
+                _state = new PersistentState();
+
                 if (tx.TryGet(_stateDb, StateDbKeys.Id, out val))
                 {
-                    _state = new PersistentState();
                     _state.Id = val;
 
                     if (tx.TryGet(_stateDb, StateDbKeys.CurrentTerm, out val)) // this should be always TRUE
                         _state.CurrentTerm = val;
 
                     if (tx.TryGet(_stateDb, StateDbKeys.LastVotedFor, out val))
-                        _state.LastVotedForId = val;
+                    {
+                        Guid g = val;
+                        _state.LastVotedForId = g == Guid.Empty ? (Guid?) null : g;
+                    }
                 }
             }
         }
@@ -256,8 +260,7 @@ namespace Avalon.Raft.Core.Persistence
             {
                 using (var tx = _env.BeginTransaction())
                 {
-                    if (state.LastVotedForId.HasValue)
-                        tx.Put(_stateDb, StateDbKeys.LastVotedFor, state.LastVotedForId.Value);
+                    tx.Put(_stateDb, StateDbKeys.LastVotedFor, state.LastVotedForId ?? Guid.Empty);
                     tx.Put(_stateDb, StateDbKeys.Id, state.Id);
                     tx.Put(_stateDb, StateDbKeys.CurrentTerm, state.CurrentTerm);
                     tx.Commit();
@@ -273,13 +276,13 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public void SaveLastVotedFor(Guid id)
+        public void SaveLastVotedFor(Guid? id)
         {
             lock (_lock) // TODO: unnecessary probably
             {
                 using (var tx = _env.BeginTransaction())
                 {
-                    tx.Put(_stateDb, StateDbKeys.LastVotedFor, id);
+                    tx.Put(_stateDb, StateDbKeys.LastVotedFor, id ?? Guid.Empty);
                     tx.Commit();
                     _state.LastVotedForId = id;
                 }

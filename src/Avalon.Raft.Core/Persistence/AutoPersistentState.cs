@@ -39,12 +39,9 @@ namespace Avalon.Raft.Core.Persistence
             get => base.LastVotedForId;
             set
             {
-                if (!value.HasValue)
-                    throw new ArgumentNullException("Y U NO VALUE??! YOU CANNOT SET TO NULL.");
-
                 base.LastVotedForId = value;
                 if (!_initialLocading)
-                    _persister.SaveLastVotedFor(value.Value);
+                    _persister.SaveLastVotedFor(value);
             }
         }
     }
