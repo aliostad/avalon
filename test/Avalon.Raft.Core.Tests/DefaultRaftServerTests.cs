@@ -27,10 +27,13 @@ namespace Avalon.Raft.Core.Tests
             _sister = new LmdbPersister(_directory);
             _manijer = new Mock<IPeerManager>();
             _maqina = new Mock<IStateMachine>();
+
+#if DEBUG
             TheTrace.Tracer = (level, s, os) =>
             {
                 File.AppendAllText("trace.log", String.Format($"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}\r\n")); 
             };
+#endif
         }
 
         [Fact]
@@ -43,7 +46,7 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new LazyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Thread.Sleep(300);
+            Thread.Sleep(2000);
             Assert.Equal(Role.Candidate, _server.Role);
         }
 
