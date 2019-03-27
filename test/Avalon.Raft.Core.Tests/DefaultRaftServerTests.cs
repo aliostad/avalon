@@ -281,6 +281,52 @@ namespace Avalon.Raft.Core.Tests
 
         }
 
+        [Fact]
+        public async Task RunsErrandsForLogs()
+        {
+            var leaderId = Guid.NewGuid();
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            var currentPosition = 0;
+            var term = 2;
+            for (int i = 0; i < 10; i++)
+            {
+                var entries = GetSomeRandomEntries();
+                await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                {
+                    CurrentTerm = term,
+                    Entries = entries,
+                    LeaderCommitIndex = currentPosition + entries.Length,
+                    LeaderId = leaderId,
+                    PreviousLogIndex = currentPosition - 1,
+                    PreviousLogTerm = term 
+                });
+
+                currentPosition += entries.Length;
+                settings.ElectionTimeoutMax.Multiply(0.3);
+            }
+
+            Assert.Equal(currentPosition - 1, _sister.LastIndex);
+            Assert.Equal(Role.Follower, _server.Role);
+
+        }
+
+        private byte[][] GetSomeRandomEntries()
+        {
+            var l = new List<byte[]>();
+            var r = new Random();
+            for (int i = 0; i < r.Next(10, 20); i++)
+            {
+                var bb = new byte[r.Next(32, 129)];
+                r.NextBytes(bb);
+                l.Add(bb);
+            }
+
+            return l.ToArray();
+        }
+
         public void Dispose()
         {
             try

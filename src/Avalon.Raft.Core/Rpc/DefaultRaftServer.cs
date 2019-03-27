@@ -234,6 +234,7 @@ namespace Avalon.Raft.Core.Rpc
             }).ToArray();
 
             // Append any new entries not already in the log
+            TheTrace.TraceInformation($"Current last index is {_logPersister.LastIndex}. About to append {entries.Length} entries at {request.PreviousLogIndex + 1}");
             _logPersister.Append(entries, request.PreviousLogIndex + 1);
 
             //If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
@@ -276,10 +277,14 @@ namespace Avalon.Raft.Core.Rpc
                     VoteGranted = false
                 });
 
-            // If votedFor is null or candidateId, and candidate’s log is at least as up - to - date as receiver’s log, grant vote(§5.2, §5.4)
+            // If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote(§5.2, §5.4)
             if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
             {
                 State.LastVotedForId = request.CandidateId;
+
+                // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
+                _lastHeartbeat = DateTimeOffset.Now;
+
                 return Task.FromResult(new RequestVoteResponse()
                 {
                     CurrentTrem = State.CurrentTerm,

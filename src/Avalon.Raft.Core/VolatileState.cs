@@ -12,12 +12,12 @@ namespace Avalon.Raft.Core
         /// <summary>
         /// index of highest log entry known to be committed(initialized to 0, increases monotonically)
         /// </summary>
-        public long CommitIndex { get; set; }
+        public long CommitIndex { get; set; } = -1;
 
         /// <summary>
         /// index of highest log entry applied to state machine
         /// </summary>
-        public long LastApplied { get; set; }
+        public long LastApplied { get; set; } = -1;
     }
 
     /// <summary>

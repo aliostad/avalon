@@ -191,7 +191,7 @@ namespace Avalon.Raft.Core.Persistence
                     if (!tx.TryGetDuplicate(_logDb, LogKey, ref b))
                         throw new InvalidOperationException($"Could not find index {i} in the logs.");
                     StoredLogEntry s = b.Buffer;
-                    if (s.Index != index)
+                    if (s.Index != i)
                         throw new InvalidDataException($"Corruption in the highest. Supposedly loaded {index} but came out {s.Index}");
 
                     list[i - index] = new LogEntry()
