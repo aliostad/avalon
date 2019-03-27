@@ -19,7 +19,12 @@ namespace Avalon.Raft.Core.Tests
         private readonly Mock<IPeerManager> _manijer;
         private readonly Mock<IStateMachine> _maqina;
         private DefaultRaftServer _server;
+        private readonly object _lock = new object();
+        private readonly string _correlationId = Guid.NewGuid().ToString("N");
+        private StreamWriter _writer;
 
+        private const bool OutputTraceLog = true;
+        
 
         public DefaultRaftServerTests()
         {
@@ -27,13 +32,22 @@ namespace Avalon.Raft.Core.Tests
             _sister = new LmdbPersister(_directory);
             _manijer = new Mock<IPeerManager>();
             _maqina = new Mock<IStateMachine>();
-
-#if DEBUG
-            TheTrace.Tracer = (level, s, os) =>
+            _writer = new StreamWriter(new FileStream($"trace_{_correlationId}.log", FileMode.OpenOrCreate))
             {
-                File.AppendAllText("trace.log", String.Format($"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}\r\n")); 
-            };
-#endif
+                AutoFlush = true
+            }; 
+
+            if (OutputTraceLog)
+            {
+                TheTrace.Tracer = (level, s, os) =>
+                {
+                    lock (_lock)
+                    {
+                        var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
+                        _writer.WriteLine(message);
+                    }
+                };
+            }
         }
 
         [Fact]
@@ -84,6 +98,45 @@ namespace Avalon.Raft.Core.Tests
             TheTrace.TraceInformation("Checked Role.");
         }
 
+        [Fact]
+        public void KeepFeedingAFollowerAndNeverDreamsOfPower()
+        {
+            var t = new CancellationTokenSource();
+            var leaderId = Guid.NewGuid();
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            Task.Run(async () =>
+            {
+                while(!t.IsCancellationRequested)
+                {
+                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                    {
+                        CurrentTerm = 1,
+                        Entries = new byte[0][],
+                        LeaderCommitIndex = 20,
+                        LeaderId = leaderId,
+                        PreviousLogIndex = -1,
+                        PreviousLogTerm = 0
+                    });
+
+                    TheTrace.TraceInformation("Sent heartbeat!");
+                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
+                }
+            });
+
+            TheTrace.TraceInformation("OK, now this is before wait...");
+            Thread.Sleep(1000);
+            TheTrace.TraceInformation("Wait finished.");
+            Assert.Equal(1, _server.State.CurrentTerm);
+            TheTrace.TraceInformation("Checked Term.");
+            Assert.Equal(Role.Follower, _server.Role);
+            TheTrace.TraceInformation("Checked Role.");
+            t.Cancel();
+        }
+
+
         public void Dispose()
         {
             try
@@ -92,6 +145,7 @@ namespace Avalon.Raft.Core.Tests
                 Thread.Sleep(100);
                 _sister.Dispose();
                 Directory.Delete(_directory, true);
+                _writer.Close();
             }
             catch (Exception e)
             {
