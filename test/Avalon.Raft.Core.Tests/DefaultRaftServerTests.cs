@@ -137,6 +137,150 @@ namespace Avalon.Raft.Core.Tests
         }
 
 
+        /// <summary>
+        /// Reply false if term < currentTerm (§5.1)
+        /// </summary>
+        /// <returns></returns>
+        [Fact]
+        public async Task NeverVotesYesToLowerTerm()
+        {
+            var t = new CancellationTokenSource();
+            var leaderId = Guid.NewGuid();
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            Task.Run(async () =>
+            {
+                while (!t.IsCancellationRequested)
+                {
+                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                    {
+                        CurrentTerm = 2,
+                        Entries = new byte[0][],
+                        LeaderCommitIndex = 20,
+                        LeaderId = leaderId,
+                        PreviousLogIndex = -1,
+                        PreviousLogTerm = 0
+                    });
+
+                    TheTrace.TraceInformation("Sent heartbeat!");
+                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
+                }
+            });
+
+            Thread.Sleep(400);
+            var result = await _server.RequestVoteAsync(new RequestVoteRequest()
+            {
+                CandidateId = Guid.NewGuid(),
+                CurrentTerm = 1,
+                LastLogIndex = 2,
+                LastLogTerm  = 1
+            });
+
+            t.Cancel();
+
+            Assert.False(result.VoteGranted);
+            Assert.Equal(2, result.CurrentTrem);
+
+        }
+
+        [Fact]
+        public async Task VotesYesToTheRightGuy()
+        {
+            var t = new CancellationTokenSource();
+            var leaderId = Guid.NewGuid();
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            Task.Run(async () =>
+            {
+                while (!t.IsCancellationRequested)
+                {
+                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                    {
+                        CurrentTerm = 2,
+                        Entries = new byte[0][],
+                        LeaderCommitIndex = 20,
+                        LeaderId = leaderId,
+                        PreviousLogIndex = -1,
+                        PreviousLogTerm = 0
+                    });
+
+                    TheTrace.TraceInformation("Sent heartbeat!");
+                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
+                }
+            });
+
+            Thread.Sleep(400);
+            var result = await _server.RequestVoteAsync(new RequestVoteRequest()
+            {
+                CandidateId = Guid.NewGuid(),
+                CurrentTerm = 2,
+                LastLogIndex = 2,
+                LastLogTerm = 1
+            });
+
+            t.Cancel();
+
+            Assert.True(result.VoteGranted);
+            Assert.Equal(2, result.CurrentTrem);
+
+        }
+
+        [Fact]
+        public async Task NeverVotesTwice()
+        {
+            var t = new CancellationTokenSource();
+            var leaderId = Guid.NewGuid();
+            var settings = new RaftSettings();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            Task.Run(async () =>
+            {
+                while (!t.IsCancellationRequested)
+                {
+                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                    {
+                        CurrentTerm = 2,
+                        Entries = new byte[0][],
+                        LeaderCommitIndex = 20,
+                        LeaderId = leaderId,
+                        PreviousLogIndex = -1,
+                        PreviousLogTerm = 0
+                    });
+
+                    TheTrace.TraceInformation("Sent heartbeat!");
+                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
+                }
+            });
+
+            Thread.Sleep(400);
+            var result = await _server.RequestVoteAsync(new RequestVoteRequest()
+            {
+                CandidateId = Guid.NewGuid(),
+                CurrentTerm = 2,
+                LastLogIndex = 2,
+                LastLogTerm = 1
+            });
+
+            Thread.Sleep(400);
+            var result2 = await _server.RequestVoteAsync(new RequestVoteRequest()
+            {
+                CandidateId = Guid.NewGuid(),
+                CurrentTerm = 2,
+                LastLogIndex = 2,
+                LastLogTerm = 1
+            });
+
+            t.Cancel();
+
+            Assert.False(result2.VoteGranted);
+
+        }
+
         public void Dispose()
         {
             try
@@ -152,6 +296,8 @@ namespace Avalon.Raft.Core.Tests
                 Trace.TraceWarning(e.ToString());
             }
         }
+
+        #region Peers
 
         class LazyPeer : IRaftServer
         {
@@ -251,6 +397,8 @@ namespace Avalon.Raft.Core.Tests
                 });
             }
         }
+
+        #endregion
 
     }
 }

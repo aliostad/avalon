@@ -278,11 +278,14 @@ namespace Avalon.Raft.Core.Rpc
 
             // If votedFor is null or candidateId, and candidate’s log is at least as up - to - date as receiver’s log, grant vote(§5.2, §5.4)
             if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
+            {
+                State.LastVotedForId = request.CandidateId;
                 return Task.FromResult(new RequestVoteResponse()
                 {
                     CurrentTrem = State.CurrentTerm,
                     VoteGranted = true
                 });
+            }
 
             // assume the rest we send back no
             return Task.FromResult(new RequestVoteResponse()
@@ -299,6 +302,7 @@ namespace Avalon.Raft.Core.Rpc
 
         protected void OnRoleChanged(Role role)
         {
+            State.LastVotedForId = null;
             RoleChanged?.Invoke(this, new RoleChangedEventArgs(role));
         }
 
