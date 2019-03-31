@@ -9,7 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Spreads.LMDB" Version="1.0.0-build1811161327" />
+    <PackageReference Include="Spreads.LMDB" Version="2019.0.0" />
   </ItemGroup>
 
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
