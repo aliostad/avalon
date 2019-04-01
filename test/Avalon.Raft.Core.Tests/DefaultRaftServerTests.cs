@@ -285,9 +285,30 @@ namespace Avalon.Raft.Core.Tests
         public async Task RunsErrandsForLogs()
         {
             var leaderId = Guid.NewGuid();
+            var t = new CancellationTokenSource();
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            // has to be done - otherwise it becomes a candidate
+            Task.Run(async () =>
+            {
+                while (!t.IsCancellationRequested)
+                {
+                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                    {
+                        CurrentTerm = 2,
+                        Entries = new byte[0][],
+                        LeaderCommitIndex = 20,
+                        LeaderId = leaderId,
+                        PreviousLogIndex = -1,
+                        PreviousLogTerm = 0
+                    });
+
+                    TheTrace.TraceInformation("Sent heartbeat!");
+                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
+                }
+            });
 
             var currentPosition = 0;
             var term = 2;
@@ -305,12 +326,11 @@ namespace Avalon.Raft.Core.Tests
                 });
 
                 currentPosition += entries.Length;
-                settings.ElectionTimeoutMax.Multiply(0.3);
             }
 
             Assert.Equal(currentPosition - 1, _sister.LastIndex);
             Assert.Equal(Role.Follower, _server.Role);
-
+            t.Cancel();
         }
 
         private byte[][] GetSomeRandomEntries()
