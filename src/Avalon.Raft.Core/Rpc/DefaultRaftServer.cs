@@ -5,9 +5,6 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Polly;
-using Polly.Retry;
-using Polly.Timeout;
-using System.Threading;
 
 namespace Avalon.Raft.Core.Rpc
 {
@@ -16,7 +13,6 @@ namespace Avalon.Raft.Core.Rpc
         class Queues
         {
             public const string PeerAppendLog = "Peer-AppendLog-";
-            public const string PeerVote = "Peer-Vote-";
             public const string PeerFactory = "PeerFactory-";
             public const string LogCommit = "LogCommit";
             public const string HeartBeatReceive = "HeartBeatReceive";
@@ -63,12 +59,12 @@ namespace Avalon.Raft.Core.Rpc
             foreach (var p in _peerManager.GetPeers())
             {
                 names.Add(Queues.PeerAppendLog + p.Address);
-                names.Add(Queues.PeerVote + p.Address);
             }
 
             names.Add(Queues.LogCommit);
             names.Add(Queues.Candidacy);
             names.Add(Queues.HeartBeatReceive);
+            names.Add(Queues.HeartBeatSend);
 
             _workers = new WorkerPool(names.ToArray());
             _workers.Start();
@@ -125,9 +121,11 @@ namespace Avalon.Raft.Core.Rpc
             if (DateTimeOffset.Now.Subtract(_lastHeartbeatSent) < _settings.ElectionTimeoutMin.Multiply(0.2))
                 return;
 
+            var currentTerm = State.CurrentTerm; // create a var. Could change during the method leading to confusing logs.
+
             var req = new AppendEntriesRequest()
             {
-                CurrentTerm = State.CurrentTerm,
+                CurrentTerm = currentTerm,
                 Entries = new byte[0][],
                 LeaderCommitIndex = _volatileState.CommitIndex,
                 LeaderId = State.Id,
@@ -140,7 +138,7 @@ namespace Avalon.Raft.Core.Rpc
             var retry = TheTrace.LogPolicy().RetryForeverAsync();
             var policy = Policy.TimeoutAsync(_settings.ElectionTimeoutMin.Multiply(0.2)).WrapAsync(retry);
             var all = await Task.WhenAll(proxies.Select(p => policy.ExecuteAndCaptureAsync(() => p.AppendEntriesAsync(req))));
-            var maxTerm = 0L;
+            var maxTerm = currentTerm;
             foreach (var r in all)
             {
                 if (r.Outcome == OutcomeType.Successful)
@@ -149,8 +147,16 @@ namespace Avalon.Raft.Core.Rpc
                         TheTrace.TraceWarning("Got this from a client: {0}", r.Result.Reason);
 
                     // NOTE: We do NOT change leadership if they send higher term, since they could be candidates whom will not become leaders
+                    // we actually do not need to do anything with the result other than logging it
+                    if (r.Result.CurrentTerm > maxTerm)
+                        maxTerm = r.Result.CurrentTerm;
                 }
             }
+
+            if (maxTerm > State.CurrentTerm)
+                TheTrace.TraceWarning("Revolution brewing. Terms as high as {} (vs my {}) were seen.", maxTerm, currentTerm);
+
+            _lastHeartbeatSent = DateTimeOffset.Now;
         }
 
         private async Task Candidacy()
@@ -220,6 +226,15 @@ namespace Avalon.Raft.Core.Rpc
 
                 _volatileState.LastApplied = commitIndex;
             }
+        }
+
+        private Func<Task> PeerAppendLog(string peerAddress)
+        {
+            return async () =>
+            {
+                var matchIndex = _volatileLeaderState.MatchIndex;
+                var nextIndex = _volatileLeaderState.NextIndex;
+            };
         }
 
         #endregion

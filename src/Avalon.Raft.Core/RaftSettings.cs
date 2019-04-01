@@ -25,5 +25,16 @@ namespace Avalon.Raft.Core
         /// Minimum index interval between snapshots
         /// </summary>
         public long MinSnapshottingIndexInterval { get; set; } = 100_000L;
+
+        /// <summary>
+        /// (Not in the paper) Maximum number by which NextIndex for the peer is decremented in case non-match
+        /// </summary>
+        public long MaxNumberOfDecrementForLogsThatAreBehind { get; set; } = 100;
+
+        /// <summary>
+        /// (Not in the paper) Maximum number by of log entries a leader could ask peers to append
+        /// </summary>
+        public long MaxNumberLogEntriesToAskToBeAppended { get; set; } = 100;
+
     }
 }
