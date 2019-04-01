@@ -23,7 +23,7 @@ namespace Avalon.Raft.Core
     /// <summary>
     /// Volatile state on leaders (Reinitialized after election)
     /// </summary>
-    public class VolatileLeaderState : VolatileState
+    public class VolatileLeaderState
     {
         /// <summary>
         /// for each server, index of the next log entry to send to that server (initialized to leader last log index + 1) 

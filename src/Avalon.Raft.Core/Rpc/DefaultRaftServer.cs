@@ -20,13 +20,16 @@ namespace Avalon.Raft.Core.Rpc
             public const string PeerFactory = "PeerFactory-";
             public const string LogCommit = "LogCommit";
             public const string HeartBeatReceive = "HeartBeatReceive";
+            public const string HeartBeatSend = "HeartBeatSend";
             public const string Candidacy = "Candidacy";
         }
 
         protected VolatileState _volatileState = new VolatileState();
+        protected VolatileLeaderState _volatileLeaderState = new VolatileLeaderState();
         protected Role _role;
         protected readonly object _lock = new object();
         protected DateTimeOffset _lastHeartbeat = DateTimeOffset.Now;
+        protected DateTimeOffset _lastHeartbeatSent = DateTimeOffset.MinValue;
 
         protected readonly IStateMachine _stateMachine;
         protected readonly ILogPersister _logPersister;
@@ -88,6 +91,12 @@ namespace Avalon.Raft.Core.Rpc
                 new Job(hbr.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
+            // sending heartbeat
+            Func<Task> hbs = HeartBeatSend;
+            _workers.Enqueue(Queues.HeartBeatSend,
+                new Job(hbs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
+                TheTrace.LogPolicy().RetryForeverAsync()));
+
             TheTrace.TraceInformation("Setup finished.");
         }
 
@@ -106,6 +115,42 @@ namespace Avalon.Raft.Core.Rpc
             }
 
             return Task.CompletedTask;
+        }
+
+        private async Task HeartBeatSend()
+        {
+            if (_role != Role.Leader)
+                return;
+
+            if (DateTimeOffset.Now.Subtract(_lastHeartbeatSent) < _settings.ElectionTimeoutMin.Multiply(0.2))
+                return;
+
+            var req = new AppendEntriesRequest()
+            {
+                CurrentTerm = State.CurrentTerm,
+                Entries = new byte[0][],
+                LeaderCommitIndex = _volatileState.CommitIndex,
+                LeaderId = State.Id,
+                PreviousLogIndex = long.MaxValue,
+                PreviousLogTerm = long.MaxValue
+            };
+
+            var peers = _peerManager.GetPeers().ToArray();
+            var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
+            var retry = TheTrace.LogPolicy().RetryForeverAsync();
+            var policy = Policy.TimeoutAsync(_settings.ElectionTimeoutMin.Multiply(0.2)).WrapAsync(retry);
+            var all = await Task.WhenAll(proxies.Select(p => policy.ExecuteAndCaptureAsync(() => p.AppendEntriesAsync(req))));
+            var maxTerm = 0L;
+            foreach (var r in all)
+            {
+                if (r.Outcome == OutcomeType.Successful)
+                {
+                    if (!r.Result.IsSuccess)
+                        TheTrace.TraceWarning("Got this from a client: {0}", r.Result.Reason);
+
+                    // NOTE: We do NOT change leadership if they send higher term, since they could be candidates whom will not become leaders
+                }
+            }
         }
 
         private async Task Candidacy()
@@ -321,6 +366,14 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeLeader()
         {
+            _volatileLeaderState = new VolatileLeaderState();
+            var peers = _peerManager.GetPeers();
+            foreach(var peer in peers)
+            {
+                _volatileLeaderState.NextIndex[peer.Id] = _logPersister.LastIndex + 1;
+                _volatileLeaderState.MatchIndex[peer.Id] = 0L;
+            }
+
             OnRoleChanged(_role = Role.Leader);
         }
 
