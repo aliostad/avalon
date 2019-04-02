@@ -228,13 +228,103 @@ namespace Avalon.Raft.Core.Rpc
             }
         }
 
-        private Func<Task> PeerAppendLog(string peerAddress)
+        private Func<Task> PeerAppendLog(Peer peer)
         {
             return async () =>
             {
-                var matchIndex = _volatileLeaderState.MatchIndex;
-                var nextIndex = _volatileLeaderState.NextIndex;
+                long nextIndex;
+                long matchIndex;
+
+                var hasMatch = _volatileLeaderState.MatchIndices.TryGetValue(peer.Id, out matchIndex);
+                var hasNext = _volatileLeaderState.NextIndices.TryGetValue(peer.Id, out nextIndex);
+                var myLastIndex = _logPersister.LastIndex;
+
+                if (!hasMatch)
+                {
+                    TheTrace.TraceWarning("Could not find peer with id {} and address {} in matchIndex dic.", peer.Id, peer.Address);
+                    return;
+                }
+
+                if (!hasNext)
+                {
+                    TheTrace.TraceWarning("Could not find peer with id {} and address {} in nextIndex dic.", peer.Id, peer.Address);
+                    return;
+                }
+
+                if (nextIndex > myLastIndex)
+                    return; // nothing to do
+
+                var count = (int) Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex - nextIndex);
+                var proxy = _peerManager.GetProxy(peer.Address);
+                var retry = TheTrace.LogPolicy().RetryForeverAsync();
+                var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
+                var previousIndexTerm = -1L;
+                if (nextIndex > 0)
+                    previousIndexTerm = _logPersister.GetEntries(nextIndex - 1, 1).First().Term;
+
+                var request = new AppendEntriesRequest()
+                {
+                    CurrentTerm = State.CurrentTerm,
+                    Entries = _logPersister.GetEntries(nextIndex, count).Select(x => x.Body).ToArray(),
+                    LeaderCommitIndex = _volatileState.CommitIndex,
+                    LeaderId = State.Id,
+                    PreviousLogIndex = nextIndex - 1,
+                    PreviousLogTerm = previousIndexTerm
+                };
+
+                var result = await policy.ExecuteAndCaptureAsync(() => proxy.AppendEntriesAsync(request));
+                if (result.Outcome == OutcomeType.Successful)
+                {
+                    if (result.Result.IsSuccess)
+                    {
+                        // If successful: update nextIndex and matchIndex for follower(§5.3)"
+                        _volatileLeaderState.MatchIndices[peer.Id] = _volatileLeaderState.NextIndices[peer.Id] = nextIndex + count;
+                        TheTrace.TraceInformation("Successfully trasnferred {} entries from index {} to peer {}", count, nextIndex, peer.Id);
+                        UpdateCommitIndex();
+                    }
+                    else
+                    {
+                        // log reason only
+                        TheTrace.TraceWarning("AppendEntries for start index {} and count {} for peer {} with address {} in term {} failed with this reason: ", 
+                            nextIndex,
+                            count,
+                            peer.Id,
+                            peer.Address,
+                            State.CurrentTerm,
+                            result.Result.Reason);
+
+                        if (result.Result.ReasonType == ReasonType.LogInconsistency)
+                        {
+                            var diff = nextIndex - (matchIndex + 1);
+                            nextIndex = diff > _settings.MaxNumberOfDecrementForLogsThatAreBehind ?
+                                nextIndex - _settings.MaxNumberOfDecrementForLogsThatAreBehind :
+                                nextIndex - diff;
+
+                            _volatileLeaderState.NextIndices[peer.Id] = nextIndex;
+                            TheTrace.TraceInformation("Updated (decremented) next index for peer {} to {}", peer.Id, nextIndex);
+                        }
+                    }
+                    // not interested in network, etc errors, they get logged in the policy
+                }
             };
+        }
+
+        internal void UpdateCommitIndex()
+        {
+            /*
+            If there exists an N such that N > commitIndex, a majority
+            of matchIndex[i] ≥ N, and log[N].term == currentTerm:
+            set commitIndex = N(§5.3, §5.4). 
+            */
+
+            var majorityIndex = _volatileLeaderState.GetMajorityMatchIndex();
+            var index = _volatileState.CommitIndex + 1; // next
+            while(index <= _logPersister.LastIndex && index <= majorityIndex && _logPersister.GetEntries(index, 1).First().Term == State.CurrentTerm)
+            {
+                index++;
+            }
+
+            _volatileState.CommitIndex = index - 1;
         }
 
         #endregion
@@ -250,20 +340,19 @@ namespace Avalon.Raft.Core.Rpc
             if (request.CurrentTerm > State.CurrentTerm)
                 BecomeFollower(request.CurrentTerm);
 
-
             // Reply false if term < currentTerm (§5.1)
             if (request.CurrentTerm < State.CurrentTerm)
             {
                 message = $"Leader's term is behind ({request.CurrentTerm} vs {State.CurrentTerm}).";
                 TheTrace.TraceWarning(message);
-                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
+                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.TermInconsistency, message));
             }
 
             if (request.PreviousLogIndex > _logPersister.LastIndex)
             {
                 message = $"Position for last log entry is {_logPersister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
                 TheTrace.TraceWarning(message);
-                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
+                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
             }
 
             if (request.Entries == null || request.Entries.Length == 0)
@@ -279,7 +368,7 @@ namespace Avalon.Raft.Core.Rpc
                 {
                     message = $"Position at {request.PreviousLogIndex} has term {entry.Term} but according to leader {request.LeaderId} it must be {request.PreviousLogTerm}";
                     TheTrace.TraceWarning(message);
-                    return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, message));
+                    return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
                 }
 
                 // If an existing entry conflicts with a new one(same index but different terms), delete the existing entry and all that follow it(§5.3)
@@ -305,7 +394,7 @@ namespace Avalon.Raft.Core.Rpc
 
             message = $"Appended {request.Entries.Length} entries at position {request.PreviousLogIndex + 1}";
             TheTrace.TraceInformation(message);
-            return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true, message));
+            return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true, ReasonType.None, message));
         }
 
         /// <inheritdoc />
@@ -385,8 +474,8 @@ namespace Avalon.Raft.Core.Rpc
             var peers = _peerManager.GetPeers();
             foreach(var peer in peers)
             {
-                _volatileLeaderState.NextIndex[peer.Id] = _logPersister.LastIndex + 1;
-                _volatileLeaderState.MatchIndex[peer.Id] = 0L;
+                _volatileLeaderState.NextIndices[peer.Id] = _logPersister.LastIndex + 1;
+                _volatileLeaderState.MatchIndices[peer.Id] = -1L;
             }
 
             OnRoleChanged(_role = Role.Leader);

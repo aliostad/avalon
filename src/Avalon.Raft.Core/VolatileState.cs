@@ -1,6 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Text;
+using System.Linq;
 
 namespace Avalon.Raft.Core
 {
@@ -28,11 +28,25 @@ namespace Avalon.Raft.Core
         /// <summary>
         /// for each server, index of the next log entry to send to that server (initialized to leader last log index + 1) 
         /// </summary>
-        public Dictionary<Guid, long> NextIndex { get; } = new Dictionary<Guid, long>();
+        public Dictionary<Guid, long> NextIndices { get; } = new Dictionary<Guid, long>();
 
         /// <summary>
         /// for each server, index of highest log entry known to be replicated on server (initialized to 0, increases monotonically)
         /// </summary>
-        public Dictionary<Guid, long> MatchIndex { get; } = new Dictionary<Guid, long>();
+        public Dictionary<Guid, long> MatchIndices { get; } = new Dictionary<Guid, long>();
+
+        /// <summary>
+        /// Returns highest match index which is supported by the majority (for §5.3, §5.4) 
+        /// </summary>
+        public long GetMajorityMatchIndex()
+        {
+            if (MatchIndices.Count == 0)
+                return -1;
+
+            var matchIndices = MatchIndices.Values.ToArray();
+            Array.Sort(matchIndices);
+            var middle = (matchIndices.Length) / 2; 
+            return matchIndices[middle - 1]; // if there are 4 follower nodes, pick the second item
+        }
     }
 }
