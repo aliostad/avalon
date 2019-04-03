@@ -24,8 +24,8 @@ namespace Avalon.Raft.Core.Rpc
         protected VolatileLeaderState _volatileLeaderState = new VolatileLeaderState();
         protected Role _role;
         protected readonly object _lock = new object();
-        protected DateTimeOffset _lastHeartbeat = DateTimeOffset.Now;
-        protected DateTimeOffset _lastHeartbeatSent = DateTimeOffset.MinValue;
+        protected DateTimeOffsetTimestamp _lastHeartbeat = new DateTimeOffsetTimestamp();
+        protected DateTimeOffsetTimestamp _lastHeartbeatSent = new DateTimeOffsetTimestamp();
 
         protected readonly IStateMachine _stateMachine;
         protected readonly ILogPersister _logPersister;
@@ -35,10 +35,34 @@ namespace Avalon.Raft.Core.Rpc
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
 
+        public event EventHandler<RoleChangedEventArgs> RoleChanged;
+
         public Role Role => _role;
         public PersistentState State => _state;
 
-        public event EventHandler<RoleChangedEventArgs> RoleChanged;
+        public DateTimeOffsetTimestamp LastHeartBeat
+        {
+            get
+            {
+                return _lastHeartbeat;
+            }
+            internal set
+            {
+                _lastHeartbeat = value;
+            }
+        }
+
+        public DateTimeOffsetTimestamp LastHeartBeatSent
+        {
+            get
+            {
+                return _lastHeartbeatSent;
+            }
+            internal set
+            {
+                _lastHeartbeatSent = value;
+            }
+        }
 
         #region .ctore and setup
 
@@ -103,7 +127,7 @@ namespace Avalon.Raft.Core.Rpc
         private Task HeartBeatReceive()
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds);
-            var elapsed = DateTimeOffset.Now.Subtract(_lastHeartbeat).TotalMilliseconds;
+            var elapsed = _lastHeartbeat.Since().TotalMilliseconds;
             if (_role == Role.Follower && elapsed> millis)
             {
                 TheTrace.TraceInformation("Timeout for heartbeat: {0}ms. Time for candidacy!", elapsed);
@@ -118,7 +142,7 @@ namespace Avalon.Raft.Core.Rpc
             if (_role != Role.Leader)
                 return;
 
-            if (DateTimeOffset.Now.Subtract(_lastHeartbeatSent) < _settings.ElectionTimeoutMin.Multiply(0.2))
+            if (_lastHeartbeatSent.Since() < _settings.ElectionTimeoutMin.Multiply(0.2))
                 return;
 
             var currentTerm = State.CurrentTerm; // create a var. Could change during the method leading to confusing logs.
@@ -156,7 +180,7 @@ namespace Avalon.Raft.Core.Rpc
             if (maxTerm > State.CurrentTerm)
                 TheTrace.TraceWarning("Revolution brewing. Terms as high as {} (vs my {}) were seen.", maxTerm, currentTerm);
 
-            _lastHeartbeatSent = DateTimeOffset.Now;
+            _lastHeartbeatSent.Set();
         }
 
         private async Task Candidacy()
@@ -334,7 +358,7 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
         {
-            _lastHeartbeat = DateTimeOffset.Now;
+            _lastHeartbeat.Set();
             string message = null;
 
             if (request.CurrentTerm > State.CurrentTerm)
@@ -432,7 +456,7 @@ namespace Avalon.Raft.Core.Rpc
                 State.LastVotedForId = request.CandidateId;
 
                 // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
-                _lastHeartbeat = DateTimeOffset.Now;
+                _lastHeartbeat.Set();
 
                 return Task.FromResult(new RequestVoteResponse()
                 {
@@ -462,7 +486,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeFollower(long term)
         {
-            _lastHeartbeat = DateTimeOffset.Now; // important not to become candidate again at least for another timeout
+            _lastHeartbeat.Set(); // important not to become candidate again at least for another timeout
             State.CurrentTerm = term;
             OnRoleChanged(_role = Role.Follower);
 

@@ -144,41 +144,30 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task NeverVotesYesToLowerTerm()
         {
-            var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Task.Run(async () =>
+            // to set the term to 1
+            var result = await _server.RequestVoteAsync(new RequestVoteRequest()
             {
-                while (!t.IsCancellationRequested)
-                {
-                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
-                    {
-                        CurrentTerm = 2,
-                        Entries = new byte[0][],
-                        LeaderCommitIndex = 20,
-                        LeaderId = leaderId,
-                        PreviousLogIndex = -1,
-                        PreviousLogTerm = 0
-                    });
-
-                    TheTrace.TraceInformation("Sent heartbeat!");
-                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
-                }
+                CandidateId = Guid.NewGuid(),
+                CurrentTerm = 1,
+                LastLogIndex = 2,
+                LastLogTerm = 1
             });
 
-            Thread.Sleep(400);
-            var result = await _server.RequestVoteAsync(new RequestVoteRequest()
+            Thread.Sleep(400); // now it becomes candidate and returns no
+
+            // now its term already moved to 2 due to timeout
+            result = await _server.RequestVoteAsync(new RequestVoteRequest()
             {
                 CandidateId = Guid.NewGuid(),
                 CurrentTerm = 1,
                 LastLogIndex = 2,
                 LastLogTerm  = 1
             });
-
-            t.Cancel();
 
             Assert.False(result.VoteGranted);
             Assert.Equal(2, result.CurrentTrem);
@@ -188,30 +177,13 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task VotesYesToTheRightGuy()
         {
-            var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Task.Run(async () =>
-            {
-                while (!t.IsCancellationRequested)
-                {
-                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
-                    {
-                        CurrentTerm = 2,
-                        Entries = new byte[0][],
-                        LeaderCommitIndex = 20,
-                        LeaderId = leaderId,
-                        PreviousLogIndex = -1,
-                        PreviousLogTerm = 0
-                    });
-
-                    TheTrace.TraceInformation("Sent heartbeat!");
-                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
-                }
-            });
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
 
             Thread.Sleep(400);
             var result = await _server.RequestVoteAsync(new RequestVoteRequest()
@@ -222,8 +194,6 @@ namespace Avalon.Raft.Core.Tests
                 LastLogTerm = 1
             });
 
-            t.Cancel();
-
             Assert.True(result.VoteGranted);
             Assert.Equal(2, result.CurrentTrem);
 
@@ -232,30 +202,13 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task NeverVotesTwice()
         {
-            var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Task.Run(async () =>
-            {
-                while (!t.IsCancellationRequested)
-                {
-                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
-                    {
-                        CurrentTerm = 2,
-                        Entries = new byte[0][],
-                        LeaderCommitIndex = 20,
-                        LeaderId = leaderId,
-                        PreviousLogIndex = -1,
-                        PreviousLogTerm = 0
-                    });
-
-                    TheTrace.TraceInformation("Sent heartbeat!");
-                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
-                }
-            });
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
 
             Thread.Sleep(400);
             var result = await _server.RequestVoteAsync(new RequestVoteRequest()
@@ -275,8 +228,6 @@ namespace Avalon.Raft.Core.Tests
                 LastLogTerm = 1
             });
 
-            t.Cancel();
-
             Assert.False(result2.VoteGranted);
 
         }
@@ -285,30 +236,13 @@ namespace Avalon.Raft.Core.Tests
         public async Task RunsErrandsForLogs()
         {
             var leaderId = Guid.NewGuid();
-            var t = new CancellationTokenSource();
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
             // has to be done - otherwise it becomes a candidate
-            Task.Run(async () =>
-            {
-                while (!t.IsCancellationRequested)
-                {
-                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
-                    {
-                        CurrentTerm = 2,
-                        Entries = new byte[0][],
-                        LeaderCommitIndex = 20,
-                        LeaderId = leaderId,
-                        PreviousLogIndex = -1,
-                        PreviousLogTerm = 0
-                    });
-
-                    TheTrace.TraceInformation("Sent heartbeat!");
-                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
-                }
-            });
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
 
             var currentPosition = 0;
             var term = 2;
@@ -330,7 +264,6 @@ namespace Avalon.Raft.Core.Tests
 
             Assert.Equal(currentPosition - 1, _sister.LastIndex);
             Assert.Equal(Role.Follower, _server.Role);
-            t.Cancel();
         }
 
         private byte[][] GetSomeRandomEntries()
