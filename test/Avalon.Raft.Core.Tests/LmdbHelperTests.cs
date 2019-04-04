@@ -123,7 +123,7 @@ namespace Avalon.Raft.Core.Tests
             var key = 42;
             var value = Guid.NewGuid();
             var i = 1969L;
-            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates)))
+            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 }))
             {
                 using (var tx = _env.BeginTransaction())
                 {
@@ -153,7 +153,7 @@ namespace Avalon.Raft.Core.Tests
             var total = 1000_000L;
             var upto = 100_000L;
 
-            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates)))
+            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 }))
             {
                 using (var tx = _env.BeginTransaction())
                 {
