@@ -54,7 +54,7 @@ namespace Avalon.Raft.Core.Persistence
 
             _snapMgr = new IndexedFileManager(_directory);
 
-            _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates));
+            _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates) { DupSortPrefix = 64 });
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
 
             LoadState();
@@ -70,17 +70,19 @@ namespace Avalon.Raft.Core.Persistence
 
         private void LoadLastTermAndIndex(ReadOnlyTransaction tx)
         {
-            var c = _logDb.OpenReadOnlyCursor(tx);
-            var k = LogKey;
-            StoredLogEntryHeader value = new StoredLogEntryHeader()
+            using (var c = _logDb.OpenReadOnlyCursor(tx))
             {
-                Index = long.MaxValue
-            };
+                var k = LogKey;
+                StoredLogEntryHeader value = new StoredLogEntryHeader()
+                {
+                    Index = long.MaxValue
+                };
 
-            if (c.TryFindDup(Lookup.LE, ref k, ref value))
-            {
-                this.LastIndex = value.Index;
-                this.LastEntryTerm = value.Term;
+                if (c.TryFindDup(Lookup.LE, ref k, ref value))
+                {
+                    this.LastIndex = value.Index;
+                    this.LastEntryTerm = value.Term;
+                }
             }
         }
 
