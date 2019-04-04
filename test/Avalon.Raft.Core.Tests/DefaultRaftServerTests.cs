@@ -270,7 +270,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var l = new List<byte[]>();
             var r = new Random();
-            for (int i = 0; i < r.Next(10, 20); i++)
+            for (int i = 0; i < r.Next(10, 200); i++)
             {
                 var bb = new byte[r.Next(32, 129)];
                 r.NextBytes(bb);
@@ -287,7 +287,9 @@ namespace Avalon.Raft.Core.Tests
                 _server.Dispose();
                 Thread.Sleep(100);
                 _sister.Dispose();
+                TheTrace.TraceInformation("about to delete test directory.");
                 Directory.Delete(_directory, true);
+                TheTrace.TraceInformation("deleted directory.");
                 _writer.Close();
             }
             catch (Exception e)

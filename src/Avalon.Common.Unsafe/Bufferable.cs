@@ -2,6 +2,8 @@
 using System.Linq;
 using System.Collections.Generic;
 using System.Text;
+using System.Runtime.InteropServices;
+using System.Runtime.CompilerServices;
 
 namespace Avalon.Common
 {
@@ -98,8 +100,8 @@ namespace Avalon.Common
             var buffer = new byte[sizeof(long)*2 + b.Buffer.Length];
             fixed (byte* ptr = &b.Buffer[0], destPtr = &buffer[0])
             {
-                Buffer.MemoryCopy(&index, destPtr, buffer.Length, sizeof(long));
-                Buffer.MemoryCopy(&term, destPtr + sizeof(long), buffer.Length, sizeof(long));
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref index), destPtr, buffer.Length, sizeof(long));
+                Buffer.MemoryCopy(Unsafe.AsPointer(ref term), destPtr + sizeof(long), buffer.Length, sizeof(long));
                 Buffer.MemoryCopy(ptr, destPtr + sizeof(long)*2, b.Buffer.Length, b.Buffer.Length);
             }
 

@@ -11,7 +11,7 @@ namespace Avalon.Raft.Core.Persistence
     /// NOTE:
     /// This interface is intentially non-async since it is meant to used by a dedicated thread
     /// </summary>
-    public interface ILogPersister
+    public interface ILogPersister : IDisposable
     {
         /// <summary>
         /// Append entries

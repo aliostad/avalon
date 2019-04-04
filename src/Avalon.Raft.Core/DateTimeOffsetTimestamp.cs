@@ -30,7 +30,7 @@ namespace Avalon.Raft.Core
             _timestamp = timestamp;
         }
 
-        public TimeSpan Since()
+        public virtual TimeSpan Since()
         {
             return Since(DateTimeOffset.Now);
         }

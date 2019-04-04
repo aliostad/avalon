@@ -126,7 +126,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private Task HeartBeatReceive()
         {
-            var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds);
+            var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds + 1);
             var elapsed = _lastHeartbeat.Since().TotalMilliseconds;
             if (_role == Role.Follower && elapsed> millis)
             {
@@ -515,7 +515,11 @@ namespace Avalon.Raft.Core.Rpc
 
         public void Dispose()
         {
+            TheTrace.TraceInformation("Disposing server.");
             _workers.Stop();
+            TheTrace.TraceInformation("Disposing server. Workers stopped.");
+            _logPersister.Dispose();
+            TheTrace.TraceInformation("Disposing server. Log Persister stopped.");
         }
     }
 }

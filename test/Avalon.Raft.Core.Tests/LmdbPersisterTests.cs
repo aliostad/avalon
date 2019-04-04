@@ -13,11 +13,33 @@ namespace Avalon.Raft.Core.Tests
     {
         private LmdbPersister _persister;
         private readonly string _directory;
+        private StreamWriter _writer;
+        private readonly object _lock = new object();
+        private readonly string _correlationId = Guid.NewGuid().ToString("N");
+
+        private const bool OutputTraceLog = true;
 
         public LmdbPersisterTests()
         {
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             _persister = new LmdbPersister(_directory);
+            _writer = new StreamWriter(new FileStream($"trace_{_correlationId}.log", FileMode.OpenOrCreate))
+            {
+                AutoFlush = true
+            };
+
+            if (OutputTraceLog)
+            {
+                TheTrace.Tracer = (level, s, os) =>
+                {
+                    lock (_lock)
+                    {
+                        var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
+                        _writer.WriteLine(message);
+                    }
+                };
+            }
+
         }
 
 
@@ -199,6 +221,7 @@ namespace Avalon.Raft.Core.Tests
             Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(lastIncludedIndex, 1));
         }
 
+        
         [Fact]
         public void CanDoSnapshotLikeAKing()
         {
@@ -227,12 +250,73 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(4, snap.LastIncludedIndex);
         }
 
+        [Fact]
+        public void LastIndexIsMaintained()
+        {
+            var position = 0;
+
+            for (int i = 0; i < 20; i++)
+            {
+                var e = GetSomeEntries(variableTerm: true);
+                _persister.Append(e, position);
+                position += e.Length;
+                Assert.Equal(position - 1, _persister.LastIndex);
+                Assert.Equal(e.Last().Term, _persister.LastEntryTerm);
+            }
+        }
+
+        [Fact]
+        public void EntryUponEntryMaintainsAll()
+        {
+            var position = 0;
+
+            for (int i = 0; i < 1000; i++)
+            {
+                var e = GetSomeEntries(variableTerm: true, count: 1);
+                _persister.Append(e, position);
+                if (i > 250)
+                    TheTrace.TraceInformation("");
+                TheTrace.TraceInformation("Added item at position {0}. LastIndex is {1}", position, _persister.LastIndex);
+                position++;
+
+                Assert.Equal(e.Last().Term, _persister.LastEntryTerm);
+                Assert.Equal(position - 1, _persister.LastIndex);
+            }
+        }
+
+        private LogEntry[] GetSomeEntries(long start = 0, int? count = null, int bufferSize = 256, long term = 42L, bool variableTerm = false)
+        {
+            var list = new List<LogEntry>();
+            var r = new Random();
+            var n = count ?? r.Next(10, 100);
+            for (int i = 0; i < n; i++)
+            {
+                var body = new byte[bufferSize];
+                r.NextBytes(body);
+                if (variableTerm && r.NextDouble() < 0.1) // 10% chance
+                    term++;
+
+                list.Add(new LogEntry()
+                {
+                    Body = body,
+                    Term = term 
+                });
+            }
+
+            return list.ToArray();
+        }
+
         public void Dispose()
         {
+            TheTrace.TraceInformation("About to dispose LMDB Persister.");
             _persister.Dispose();
+            TheTrace.TraceInformation("Disposed LMDB Persister.");
+            
             try
             {
                 Directory.Delete(_directory, true);
+                TheTrace.TraceInformation("Deleted directory.");
+                _writer.Close();
             }
             catch (Exception e)
             {

@@ -12,7 +12,7 @@ namespace Avalon.Raft.Core.Persistence
     /// <summary>
     /// Implements various persistance requirements using LMDB (and files for snapshot)
     /// </summary>
-    public class LmdbPersister : ILogPersister, IStatePersister, ISnapshotOperator, IDisposable
+    public class LmdbPersister : ILogPersister, IStatePersister, ISnapshotOperator
     {
         private const long LogKey = 0L;
 
@@ -143,7 +143,12 @@ namespace Avalon.Raft.Core.Persistence
                     }
 
                     tx.Commit();
-                    LoadLastTermAndIndex();
+                }
+
+                LoadLastTermAndIndex();
+                if (LastIndex != startingOffset + entries.Length - 1)
+                {
+                    throw new InvalidOperationException($"THIS IS BAD!! expected {startingOffset} + {entries.Length} but found {LastIndex}.");
                 }
             }
         }
@@ -167,9 +172,10 @@ namespace Avalon.Raft.Core.Persistence
                         i++;
 
                     tx.Commit();
-
-                    LoadLastTermAndIndex();
                 }
+
+                LoadLastTermAndIndex();
+
             }
         }
 

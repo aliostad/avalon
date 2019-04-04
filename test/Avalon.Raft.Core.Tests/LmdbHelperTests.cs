@@ -14,6 +14,11 @@ namespace Avalon.Raft.Core.Tests
         private readonly string _directory;
         protected LMDBEnvironment _env;
         protected const string DatabaseName = "simit";
+        private StreamWriter _writer;
+        private readonly object _lock = new object();
+        private readonly string _correlationId = Guid.NewGuid().ToString("N");
+
+        private const bool OutputTraceLog = true;
 
         public LmdbHelperTests()
         {
@@ -21,6 +26,23 @@ namespace Avalon.Raft.Core.Tests
             _env = LMDBEnvironment.Create(_directory);
             _env.MapSize = 100 * 1024 * 1024;
             _env.Open();
+
+            _writer = new StreamWriter(new FileStream($"trace_{_correlationId}.log", FileMode.OpenOrCreate))
+            {
+                AutoFlush = true
+            };
+
+            if (OutputTraceLog)
+            {
+                TheTrace.Tracer = (level, s, os) =>
+                {
+                    lock (_lock)
+                    {
+                        var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
+                        _writer.WriteLine(message);
+                    }
+                };
+            }
         }
 
         [Fact]
