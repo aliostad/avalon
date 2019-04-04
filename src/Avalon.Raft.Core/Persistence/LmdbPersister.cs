@@ -54,7 +54,7 @@ namespace Avalon.Raft.Core.Persistence
 
             _snapMgr = new IndexedFileManager(_directory);
 
-            _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.IntegerDuplicates) { DupSortPrefix = 64 });
+            _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 });
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
 
             LoadState();
