@@ -99,7 +99,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void KeepFeedingAFollowerAndNeverDreamsOfPower()
+        public async Task KeepFeedingAFollowerAndNeverDreamsOfPower()
         {
             var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
@@ -107,24 +107,19 @@ namespace Avalon.Raft.Core.Tests
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Task.Run(async () =>
+            // to set the term to 1
+            await _server.AppendEntriesAsync(new AppendEntriesRequest()
             {
-                while(!t.IsCancellationRequested)
-                {
-                    await _server.AppendEntriesAsync(new AppendEntriesRequest()
-                    {
-                        CurrentTerm = 1,
-                        Entries = new byte[0][],
-                        LeaderCommitIndex = 20,
-                        LeaderId = leaderId,
-                        PreviousLogIndex = -1,
-                        PreviousLogTerm = 0
-                    });
-
-                    TheTrace.TraceInformation("Sent heartbeat!");
-                    await Task.Delay(settings.ElectionTimeoutMin.Multiply(0.3), t.Token);
-                }
+                CurrentTerm = 1,
+                Entries = new byte[0][],
+                LeaderCommitIndex = 20,
+                LeaderId = leaderId,
+                PreviousLogIndex = -1,
+                PreviousLogTerm = 0
             });
+
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
 
             TheTrace.TraceInformation("OK, now this is before wait...");
             Thread.Sleep(1000);
