@@ -41,6 +41,7 @@ namespace Avalon.Raft.Core.Scheduling
 
         public async Task DoAsync(CancellationToken token)
         {
+            IsStarted = true;
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
             if (result.Outcome == OutcomeType.Successful)
             {
@@ -50,6 +51,8 @@ namespace Avalon.Raft.Core.Scheduling
             {
                 FinalException = result.FinalException;
             }
+
+            IsFinished = true;
         }
     }
 
