@@ -13,6 +13,11 @@ namespace Avalon.Raft.Core.Scheduling
         Task DoAsync(CancellationToken token);
 
         Exception FinalException { get; }
+
+        bool IsStarted { get; }
+
+        bool IsFinished { get; }
+
     }
 
     public class Job : IJob
@@ -22,6 +27,10 @@ namespace Avalon.Raft.Core.Scheduling
         private readonly Action _callback;
 
         public Exception FinalException { private set; get; }
+
+        public bool IsStarted { get; private set; }
+
+        public bool IsFinished { get; private set; }
 
         public Job(Func<CancellationToken, Task> work, AsyncPolicy policy, Action callback = null) 
         {
@@ -49,6 +58,10 @@ namespace Avalon.Raft.Core.Scheduling
         private readonly Func<CancellationToken, Task<T>> _work;
         private readonly Action<T> _callback;
         private readonly AsyncPolicy _policy;
+        public bool IsStarted { get; private set; }
+
+        public bool IsFinished { get; private set; }
+
 
         public Job(Func<CancellationToken, Task<T>> work, AsyncPolicy policy, Action<T> callback = null)
         {
@@ -61,6 +74,7 @@ namespace Avalon.Raft.Core.Scheduling
 
         public async Task DoAsync(CancellationToken token)
         {
+            IsStarted = true;
             var result = await _policy.ExecuteAndCaptureAsync(_work, token);
             if (result.Outcome == OutcomeType.Successful)
             {
@@ -70,6 +84,8 @@ namespace Avalon.Raft.Core.Scheduling
             {
                 FinalException = result.FinalException;
             }
+
+            IsFinished = true;
         }
     }
 }
