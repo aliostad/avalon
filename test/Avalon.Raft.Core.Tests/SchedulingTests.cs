@@ -46,7 +46,7 @@ namespace Avalon.Raft.Core.Tests
 
             maths.Start();
             maths.Enqueue(job);
-            while (job.IsFinished)
+            while (!job.IsFinished)
                 Thread.Sleep(100);
             Assert.True(ran);
         }
