@@ -48,7 +48,7 @@ namespace Avalon.Raft.Core.Persistence
             _directory = directory;
             if (!Directory.Exists(directory))
                 Directory.CreateDirectory(directory);
-            _env = LMDBEnvironment.Create(directory);
+            _env = LMDBEnvironment.Create(directory, disableAsync: true);
             _env.MapSize = mapSize;
             _env.Open();
 
@@ -258,7 +258,7 @@ namespace Avalon.Raft.Core.Persistence
         {
             _stateDb.Dispose();
             _logDb.Dispose();
-            _env.Close();
+            _env.Dispose();
         }
 
         /// <inheritdocs/>

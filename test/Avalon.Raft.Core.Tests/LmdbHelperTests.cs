@@ -23,7 +23,7 @@ namespace Avalon.Raft.Core.Tests
         public LmdbHelperTests()
         {
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
-            _env = LMDBEnvironment.Create(_directory);
+            _env = LMDBEnvironment.Create(_directory, disableAsync: true);
             _env.MapSize = 100 * 1024 * 1024;
             _env.Open();
 
@@ -191,7 +191,7 @@ namespace Avalon.Raft.Core.Tests
         {
             try
             {
-                _env.Close();
+                _env.Dispose();
                 Directory.Delete(_directory, true);
             }
             catch (Exception e)
