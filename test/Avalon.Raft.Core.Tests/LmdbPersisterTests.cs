@@ -118,7 +118,7 @@ namespace Avalon.Raft.Core.Tests
         {
             int t = Environment.TickCount;
             var r = new Random();
-            var buffer = new byte[512];
+            var buffer = new byte[128];
 
             for (int i = 0; i < 1000; i++)
             {
