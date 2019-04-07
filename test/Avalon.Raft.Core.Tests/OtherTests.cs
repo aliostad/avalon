@@ -27,5 +27,18 @@ namespace Avalon.Raft.Core.Tests
 
             Assert.Equal(majority, s.GetMajorityMatchIndex());
         }
+
+        [Theory]
+        [InlineData(new[] { "29dc03f2337244b5b9b1b26c4f9494e9", "8d4445618bd94040a14f927d7dfe6f92", "fc07878d73b64c7cb251900d1e8a32a4" }, new[] { "21", "81", "F1" })]
+        [InlineData(new[] { "29dc03f2337244b5b9b1b26c4f9494e9", "28dc03f2337244b5b9b1b26c4f9494e9", "fc07878d73b64c7cb251900d1e8a32a4" }, new[] { "22", "21", "F1" })]
+        [InlineData(new[] { "29dc03f2337244b5b9b1b26c4f9494e9", "28dc03f2337244b5b9b1b26c4f9494e9", "27dc03f2337244b5b9b1b26c4f9494e9" }, new[] { "23", "23", "21" })]
+        public void ChoosesShortNamesLikeAKing(string[] gvids, string[] shortNames)
+        {
+            var peers = gvids.Select(x => new Peer(x, Guid.Parse(x))).ToArray();
+            peers.ChooseShortNames();
+            Assert.Equal(shortNames, peers.Select(x => x.ShortName).ToArray());
+        }
+
+
     }
 }

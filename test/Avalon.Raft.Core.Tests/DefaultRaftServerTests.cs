@@ -56,7 +56,7 @@ namespace Avalon.Raft.Core.Tests
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
 
-            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s} ));
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new LazyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
@@ -70,7 +70,7 @@ namespace Avalon.Raft.Core.Tests
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
 
-            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s }));
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new FriendlyPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
@@ -84,7 +84,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var settings = new RaftSettings();
             settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer() { Address = s }));
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new BackStabberPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y == "7"))).Returns(new FriendlyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
