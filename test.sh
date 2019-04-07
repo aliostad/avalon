@@ -1,0 +1,1 @@
+dotnet test -s "$(pwd)\test.runsettings" -v n

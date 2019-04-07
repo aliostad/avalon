@@ -1,0 +1,1 @@
+dotnet test -s "%cd%\test.runsettings" -v n
