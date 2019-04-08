@@ -261,6 +261,12 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(Role.Follower, _server.Role);
         }
 
+        [Fact]
+        public void LeadsFollowersAndTheirLogsLikeALeader()
+        {
+            
+        }
+
         private byte[][] GetSomeRandomEntries()
         {
             var l = new List<byte[]>();

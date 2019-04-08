@@ -8,9 +8,9 @@ using Polly;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public class DefaultRaftServer : IRaftServer, IDisposable
+    public class DefaultRaftServer : IRaftServer, IStateMachineServer, IDisposable
     {
-        class Queues
+        static class Queues
         {
             public const string PeerAppendLog = "Peer-AppendLog-";
             public const string PeerFactory = "PeerFactory-";
@@ -18,6 +18,7 @@ namespace Avalon.Raft.Core.Rpc
             public const string HeartBeatReceive = "HeartBeatReceive";
             public const string HeartBeatSend = "HeartBeatSend";
             public const string Candidacy = "Candidacy";
+            public const string ApplyClientCommands = "ApplyClientCommands";
         }
 
         protected VolatileState _volatileState = new VolatileState();
@@ -31,10 +32,11 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly ILogPersister _logPersister;
         protected readonly IPeerManager _peerManager;
         protected readonly RaftSettings _settings;
+        protected readonly RaftServerSettings _serverSettings;
         protected int _candidateVotes;
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
-
+        protected string _leaderAddress;
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
         public Role Role => _role;
@@ -66,14 +68,20 @@ namespace Avalon.Raft.Core.Rpc
 
         #region .ctore and setup
 
-        public DefaultRaftServer(ILogPersister logPersister, IStatePersister statePersister, IStateMachine stateMachine,
-            IPeerManager peerManager, RaftSettings settings)
+        public DefaultRaftServer(
+            ILogPersister logPersister, 
+            IStatePersister statePersister, 
+            IStateMachine stateMachine,
+            IPeerManager peerManager, 
+            RaftSettings settings,
+            RaftServerSettings serverSettings = null)
         {
             _logPersister = logPersister;
             _peerManager = peerManager;
             _stateMachine = stateMachine;
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
+            _serverSettings = serverSettings ?? new RaftServerSettings();
             SetupPool();
         }
 
@@ -490,22 +498,23 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeFollower(long term)
         {
+            DestroyPeerAppendLogJobs();
             _lastHeartbeat.Set(); // important not to become candidate again at least for another timeout
             State.CurrentTerm = term;
             OnRoleChanged(_role = Role.Follower);
-
         }
 
         private void BecomeLeader()
         {
             _volatileLeaderState = new VolatileLeaderState();
-            var peers = _peerManager.GetPeers();
+            var peers = _peerManager.GetPeers().ToArray();
             foreach(var peer in peers)
             {
                 _volatileLeaderState.NextIndices[peer.Id] = _logPersister.LastIndex + 1;
                 _volatileLeaderState.MatchIndices[peer.Id] = -1L;
             }
 
+            SetupPeerAppendLogJobs(peers);
             OnRoleChanged(_role = Role.Leader);
         }
 
@@ -516,17 +525,21 @@ namespace Avalon.Raft.Core.Rpc
             OnRoleChanged(_role = Role.Candidate);
         }
 
-        private void SetupPeerAppendLogJobs()
+        private void SetupPeerAppendLogJobs(IEnumerable<Peer> peers)
         {
-            
+            foreach(var p in peers)
+            {
+                var todo = PeerAppendLog(p);
+                _workers.Enqueue(Queues.PeerAppendLog + p.Address,
+                    new Job(todo.ComposeLooper(TimeSpan.Zero), // the timeout is built into the job
+                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*50))));
+            }
         }
 
         private void DestroyPeerAppendLogJobs()
         {
             foreach(var w in _workers.GetWorkers(Queues.PeerAppendLog))
-            {
                 w.Stop();
-            }
         }
 
         #endregion
@@ -538,6 +551,26 @@ namespace Avalon.Raft.Core.Rpc
             TheTrace.TraceInformation("Disposing server. Workers stopped.");
             _logPersister.Dispose();
             TheTrace.TraceInformation("Disposing server. Log Persister stopped.");
+        }
+
+        public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
+        {
+            if (Role == Role.Leader)
+            {
+                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
+            }
+            else if (_serverSettings.RedirectStateMachineCommands && _leaderAddress != null)
+            {
+                return Task.FromResult(new StateMachineCommandResponse() 
+                {
+                    Outcome = CommandOutcome.Redirect, 
+                    DirectTo = _leaderAddress 
+                });
+            }
+            else
+            {
+                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.ServiceUnavailable });
+            }
         }
     }
 }
