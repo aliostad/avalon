@@ -55,5 +55,14 @@ namespace Avalon.Raft.Core.Scheduling
                 w.Stop();
             return could;
         }
+
+        public IEnumerable<Worker> GetWorkers(string nameOrPartOfName)
+        {
+            foreach(var w in _workers.Values)
+            {
+                if (w.Name.Contains(nameOrPartOfName))
+                    yield return w;
+            }
+        }
     }
 }

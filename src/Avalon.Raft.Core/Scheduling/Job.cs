@@ -17,7 +17,6 @@ namespace Avalon.Raft.Core.Scheduling
         bool IsStarted { get; }
 
         bool IsFinished { get; }
-
     }
 
     public class Job : IJob

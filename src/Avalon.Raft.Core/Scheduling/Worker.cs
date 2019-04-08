@@ -9,7 +9,7 @@ namespace Avalon.Raft.Core.Scheduling
 {
     public class Worker : IDisposable
     {
-        private readonly BlockingCollection<IJob> _q = new BlockingCollection<IJob>();
+        private BlockingCollection<IJob> _q = new BlockingCollection<IJob>();
         private CancellationTokenSource _cancel;
         private Thread _th;
 
@@ -43,7 +43,7 @@ namespace Avalon.Raft.Core.Scheduling
         {
             if (!IsRunning)
             {
-                TheTrace.TraceWarning("Asked to stop while already stopped.");
+                TheTrace.TraceInformation("Asked to stop while already stopped.");
                 return;
             }
 
@@ -52,6 +52,7 @@ namespace Avalon.Raft.Core.Scheduling
             if (!_th.Join(50))
                 _th.Abort();
 
+            _q = new BlockingCollection<IJob>();
             IsRunning = false;
         }
 
@@ -76,7 +77,7 @@ namespace Avalon.Raft.Core.Scheduling
                 }
                 catch(Exception e)
                 {
-                    TheTrace.TraceError($"Job errored: {e}");
+                    TheTrace.TraceError($"Job errorred: {e}");
                 }
             }
         }

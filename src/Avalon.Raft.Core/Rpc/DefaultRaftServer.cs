@@ -128,7 +128,7 @@ namespace Avalon.Raft.Core.Rpc
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds + 1);
             var elapsed = _lastHeartbeat.Since().TotalMilliseconds;
-            if (_role == Role.Follower && elapsed> millis)
+            if (_role == Role.Follower && elapsed > millis)
             {
                 TheTrace.TraceInformation("Timeout for heartbeat: {0}ms. Time for candidacy!", elapsed);
                 BecomeCandidate();
@@ -303,7 +303,7 @@ namespace Avalon.Raft.Core.Rpc
                     {
                         // If successful: update nextIndex and matchIndex for follower(§5.3)"
                         _volatileLeaderState.MatchIndices[peer.Id] = _volatileLeaderState.NextIndices[peer.Id] = nextIndex + count;
-                        TheTrace.TraceInformation("Successfully trasnferred {} entries from index {} to peer {}", count, nextIndex, peer.Id);
+                        TheTrace.TraceInformation("Successfully transferred {} entries from index {} to peer {}", count, nextIndex, peer.Id);
                         UpdateCommitIndex();
                     }
                     else
@@ -328,6 +328,10 @@ namespace Avalon.Raft.Core.Rpc
                             TheTrace.TraceInformation("Updated (decremented) next index for peer {} to {}", peer.Id, nextIndex);
                         }
                     }
+                }
+                else
+                {
+                    // NUNCA!!
                     // not interested in network, etc errors, they get logged in the policy
                 }
             };
@@ -476,7 +480,7 @@ namespace Avalon.Raft.Core.Rpc
 
         #endregion
 
-        #region Role Chnages
+        #region Role Changes
 
         protected void OnRoleChanged(Role role)
         {
@@ -507,8 +511,22 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeCandidate()
         {
+            DestroyPeerAppendLogJobs();
             State.IncrementTerm();
             OnRoleChanged(_role = Role.Candidate);
+        }
+
+        private void SetupPeerAppendLogJobs()
+        {
+            
+        }
+
+        private void DestroyPeerAppendLogJobs()
+        {
+            foreach(var w in _workers.GetWorkers(Queues.PeerAppendLog))
+            {
+                w.Stop();
+            }
         }
 
         #endregion
