@@ -5,7 +5,7 @@ using System.Threading.Tasks;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public interface IRaftServer
+    public interface IRaftServer : IStateMachineServer
     {
         Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request);
 

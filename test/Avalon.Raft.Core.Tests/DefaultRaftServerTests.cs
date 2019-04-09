@@ -313,6 +313,11 @@ namespace Avalon.Raft.Core.Tests
                 throw new NotImplementedException();
             }
 
+            public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
+            {
+                throw new NotImplementedException();
+            }
+
             public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
             {
                 Thread.Sleep(10000);
@@ -337,6 +342,11 @@ namespace Avalon.Raft.Core.Tests
                 throw new Exception("I am Angry!");
             }
 
+            public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
+            {
+                throw new NotImplementedException();
+            }
+
             public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
             {
                 throw new Exception("I am Angry!");
@@ -355,6 +365,11 @@ namespace Avalon.Raft.Core.Tests
             public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
             public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
             {
                 throw new NotImplementedException();
             }
@@ -381,6 +396,11 @@ namespace Avalon.Raft.Core.Tests
             public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
             public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
+            {
+                throw new NotImplementedException();
+            }
+
+            public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
             {
                 throw new NotImplementedException();
             }

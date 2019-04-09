@@ -8,7 +8,7 @@ using Polly;
 
 namespace Avalon.Raft.Core.Rpc
 {
-    public class DefaultRaftServer : IRaftServer, IStateMachineServer, IDisposable
+    public class DefaultRaftServer : IRaftServer, IDisposable
     {
         static class Queues
         {
@@ -391,8 +391,9 @@ namespace Avalon.Raft.Core.Rpc
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
             }
 
-            if (request.Entries == null || request.Entries.Length == 0)
+            if (request.Entries == null || request.Entries.Length == 0) // it is a heartbeat, set the leader address
             {
+                _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).Single().Address;
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
             }
 
@@ -485,6 +486,32 @@ namespace Avalon.Raft.Core.Rpc
             });
         }
 
+        /// <inheritdoc />
+        public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
+        {
+            if (Role == Role.Leader)
+            {
+                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
+            }
+            else if (_serverSettings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
+            {
+                var leaderProxy = _peerManager.GetProxy(_leaderAddress);
+                return leaderProxy.ApplyCommandAsync(command);
+            }
+            else if (_serverSettings.RedirectStateMachineCommands && _leaderAddress != null)
+            {
+                return Task.FromResult(new StateMachineCommandResponse() 
+                {
+                    Outcome = CommandOutcome.Redirect, 
+                    DirectTo = _leaderAddress 
+                });
+            }
+            else
+            {
+                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.ServiceUnavailable });
+            }
+        }
+
 
         #endregion
 
@@ -506,6 +533,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeLeader()
         {
+            _leaderAddress = null;
             _volatileLeaderState = new VolatileLeaderState();
             var peers = _peerManager.GetPeers().ToArray();
             foreach(var peer in peers)
@@ -520,6 +548,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeCandidate()
         {
+            _leaderAddress = null;
             DestroyPeerAppendLogJobs();
             State.IncrementTerm();
             OnRoleChanged(_role = Role.Candidate);
@@ -551,26 +580,6 @@ namespace Avalon.Raft.Core.Rpc
             TheTrace.TraceInformation("Disposing server. Workers stopped.");
             _logPersister.Dispose();
             TheTrace.TraceInformation("Disposing server. Log Persister stopped.");
-        }
-
-        public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
-        {
-            if (Role == Role.Leader)
-            {
-                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
-            }
-            else if (_serverSettings.RedirectStateMachineCommands && _leaderAddress != null)
-            {
-                return Task.FromResult(new StateMachineCommandResponse() 
-                {
-                    Outcome = CommandOutcome.Redirect, 
-                    DirectTo = _leaderAddress 
-                });
-            }
-            else
-            {
-                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.ServiceUnavailable });
-            }
         }
     }
 }
