@@ -217,8 +217,8 @@ namespace Avalon.Raft.Core.Rpc
                 {
                     if (r.Outcome == OutcomeType.Successful)
                     {
-                        if (r.Result.CurrentTrem > maxTerm)
-                            maxTerm = r.Result.CurrentTrem;
+                        if (r.Result.CurrentTerm > maxTerm)
+                            maxTerm = r.Result.CurrentTerm;
 
                         if (r.Result != null && r.Result.VoteGranted)
                             forMe++;
@@ -393,7 +393,7 @@ namespace Avalon.Raft.Core.Rpc
 
             if (request.Entries == null || request.Entries.Length == 0) // it is a heartbeat, set the leader address
             {
-                _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).Single().Address;
+                _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).FirstOrDefault()?.Address;
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
             }
 
@@ -459,7 +459,7 @@ namespace Avalon.Raft.Core.Rpc
             if (State.CurrentTerm > request.CurrentTerm)
                 return Task.FromResult(new RequestVoteResponse()
                 {
-                    CurrentTrem = State.CurrentTerm,
+                    CurrentTerm = State.CurrentTerm,
                     VoteGranted = false
                 });
 
@@ -473,7 +473,7 @@ namespace Avalon.Raft.Core.Rpc
 
                 return Task.FromResult(new RequestVoteResponse()
                 {
-                    CurrentTrem = State.CurrentTerm,
+                    CurrentTerm = State.CurrentTerm,
                     VoteGranted = true
                 });
             }
@@ -481,7 +481,7 @@ namespace Avalon.Raft.Core.Rpc
             // assume the rest we send back no
             return Task.FromResult(new RequestVoteResponse()
             {
-                CurrentTrem = State.CurrentTerm,
+                CurrentTerm = State.CurrentTerm,
                 VoteGranted = false
             });
         }

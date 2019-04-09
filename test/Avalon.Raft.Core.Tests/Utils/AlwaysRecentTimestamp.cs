@@ -13,4 +13,13 @@ namespace Avalon.Raft.Core.Tests
             return TimeSpan.Zero;
         }
     }
+
+    public class AlwaysOldTimestamp : DateTimeOffsetTimestamp
+    {
+        public override TimeSpan Since(DateTimeOffset time)
+        {
+            return TimeSpan.FromDays(366);
+        }
+    }
+
 }

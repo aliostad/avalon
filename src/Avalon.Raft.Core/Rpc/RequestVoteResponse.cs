@@ -12,7 +12,7 @@ namespace Avalon.Raft.Core.Rpc
         /// <summary>
         /// currentTerm, for candidate to update itself
         /// </summary>
-        public long CurrentTrem { get; set; }
+        public long CurrentTerm { get; set; }
 
         /// <summary>
         /// true means candidate received vote

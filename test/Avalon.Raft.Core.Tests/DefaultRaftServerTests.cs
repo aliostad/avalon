@@ -75,7 +75,7 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
-            Thread.Sleep(5000);
+            Thread.Sleep(1000);
             Assert.Equal(Role.Leader, _server.Role);
         }
 
@@ -165,7 +165,7 @@ namespace Avalon.Raft.Core.Tests
             });
 
             Assert.False(result.VoteGranted);
-            Assert.Equal(2, result.CurrentTrem);
+            Assert.Equal(2, result.CurrentTerm);
 
         }
 
@@ -190,7 +190,7 @@ namespace Avalon.Raft.Core.Tests
             });
 
             Assert.True(result.VoteGranted);
-            Assert.Equal(2, result.CurrentTrem);
+            Assert.Equal(2, result.CurrentTerm);
 
         }
 
@@ -362,6 +362,8 @@ namespace Avalon.Raft.Core.Tests
         {
             public Role Role => throw new NotImplementedException();
 
+            public List<AppendEntriesRequest> AllThemAppendEntriesRequests = new List<AppendEntriesRequest>();
+
             public event EventHandler<RoleChangedEventArgs> RoleChanged;
 
             public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
@@ -383,7 +385,7 @@ namespace Avalon.Raft.Core.Tests
             {
                 return Task.FromResult(new RequestVoteResponse()
                 {
-                    CurrentTrem = request.CurrentTerm - 1,
+                    CurrentTerm = request.CurrentTerm - 1,
                     VoteGranted = true
                 });
             }
@@ -414,7 +416,7 @@ namespace Avalon.Raft.Core.Tests
             {
                 return Task.FromResult(new RequestVoteResponse()
                 {
-                    CurrentTrem = request.CurrentTerm ,
+                    CurrentTerm = request.CurrentTerm ,
                     VoteGranted = false
                 });
             }
