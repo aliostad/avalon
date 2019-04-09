@@ -46,8 +46,9 @@ namespace Avalon.Raft.Core.Tests
                     lock (_lock)
                     {
                         var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
-                        _output.WriteLine(message);
                         _writer.WriteLine(message);
+                        if (level < TraceLevel.Warning)
+                            _output.WriteLine(message);
                     }
                 };
             }
@@ -287,8 +288,9 @@ namespace Avalon.Raft.Core.Tests
             Thread.Sleep(3000);
             
             Assert.Equal(Role.Leader, _server.Role);
-            Assert.True(
-                list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length == 0)).Count() > 0);
+            var timesFollowersServed = list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length == 0)).Count();
+            Assert.True(timesFollowersServed > 10);
+            _output.WriteLine($"{nameof(timesFollowersServed)}: {timesFollowersServed}");
         }
 
         private byte[][] GetSomeRandomEntries()
