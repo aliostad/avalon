@@ -9,6 +9,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using Xunit;
+using Xunit.Abstractions;
 
 namespace Avalon.Raft.Core.Tests
 {
@@ -22,12 +23,13 @@ namespace Avalon.Raft.Core.Tests
         private readonly object _lock = new object();
         private readonly string _correlationId = Guid.NewGuid().ToString("N");
         private StreamWriter _writer;
-
+        private readonly ITestOutputHelper _output;
         private const bool OutputTraceLog = true;
         
 
-        public DefaultRaftServerTests()
+        public DefaultRaftServerTests(ITestOutputHelper output)
         {
+            _output = output;
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             _sister = new LmdbPersister(_directory);
             _manijer = new Mock<IPeerManager>();
@@ -44,6 +46,7 @@ namespace Avalon.Raft.Core.Tests
                     lock (_lock)
                     {
                         var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
+                        _output.WriteLine(message);
                         _writer.WriteLine(message);
                     }
                 };
@@ -264,7 +267,28 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void LeadsFollowersAndTheirLogsLikeALeader()
         {
+            var settings = new RaftSettings();
+            var list = new List<FriendlyPeer>();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
+            _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
+                () => {
+                    var s = new FriendlyPeer();
+                    list.Add(s);
+                    return s;
+                }
+            );
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            _server.LastHeartBeat = new AlwaysOldTimestamp();
+
+            Thread.Sleep(3000);
             
+            Assert.Equal(Role.Leader, _server.Role);
+            Assert.True(
+                list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length == 0)).Count() > 0);
         }
 
         private byte[][] GetSomeRandomEntries()
@@ -339,7 +363,7 @@ namespace Avalon.Raft.Core.Tests
 
             public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
             {
-                throw new Exception("I am Angry!");
+                return Task.FromResult(new AppendEntriesResponse(0, true));
             }
 
             public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
@@ -368,7 +392,8 @@ namespace Avalon.Raft.Core.Tests
 
             public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
             {
-                throw new NotImplementedException();
+                AllThemAppendEntriesRequests.Add(request);
+                return Task.FromResult(new AppendEntriesResponse(0, true));
             }
 
             public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)

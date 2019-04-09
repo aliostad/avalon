@@ -48,7 +48,6 @@ namespace Avalon.Raft.Core.Scheduling
             }
 
             _cancel.Cancel();
-            _cancel.Dispose();
             if (!_th.Join(50))
                 _th.Abort();
 
