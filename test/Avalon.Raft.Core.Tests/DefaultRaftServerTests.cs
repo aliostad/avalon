@@ -47,7 +47,7 @@ namespace Avalon.Raft.Core.Tests
                     {
                         var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
                         _writer.WriteLine(message);
-                        if (level < TraceLevel.Warning)
+                        //if (level < TraceLevel.Warning)
                             _output.WriteLine(message);
                     }
                 };
@@ -266,7 +266,7 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
-        public void LeadsFollowersAndTheirLogsLikeALeader()
+        public void LeadsFollowersAndTheirHeartbeatLikeALeader()
         {
             var settings = new RaftSettings();
             var list = new List<FriendlyPeer>();
@@ -280,6 +280,7 @@ namespace Avalon.Raft.Core.Tests
                     return s;
                 }
             );
+
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
@@ -291,6 +292,46 @@ namespace Avalon.Raft.Core.Tests
             var timesFollowersServed = list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length == 0)).Count();
             Assert.True(timesFollowersServed > 10);
             _output.WriteLine($"{nameof(timesFollowersServed)}: {timesFollowersServed}");
+        }
+
+        [Fact]
+        public async Task LeadsFollowersAndTheirLogsLikeALeader()
+        {
+            var settings = new RaftSettings();
+            var list = new List<FriendlyPeer>();
+            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
+
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
+            _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
+                () => {
+                    var s = new FriendlyPeer();
+                    list.Add(s);
+                    return s;
+                }
+            );
+
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
+            _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
+
+            _server.LastHeartBeat = new AlwaysOldTimestamp();
+
+            Thread.Sleep(2000); // must be a leader by now            
+            Assert.Equal(Role.Leader, _server.Role);
+            await _server.ApplyCommandAsync(new StateMachineCommandRequest(){
+                Command = new byte[128]
+            });
+            await _server.ApplyCommandAsync(new StateMachineCommandRequest(){
+                Command = new byte[128]
+            });
+            await _server.ApplyCommandAsync(new StateMachineCommandRequest(){
+                Command = new byte[128]
+            });
+            
+            Thread.Sleep(2000);
+            
+            var timesFollowersServed = list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length > 0)).Count();
+            _output.WriteLine($"timesFollowersServed: {timesFollowersServed}");
+            Assert.True(timesFollowersServed > 1);
         }
 
         private byte[][] GetSomeRandomEntries()

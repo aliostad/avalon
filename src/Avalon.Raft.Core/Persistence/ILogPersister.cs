@@ -18,7 +18,7 @@ namespace Avalon.Raft.Core.Persistence
         /// </summary>
         /// <param name="entries">entries</param>
         /// <param name="startingOffset">first entry has this index</param>
-        void Append(LogEntry[] entries, long startingOffset);
+        void Append(LogEntry[] entries, long? startingOffset = null);
 
         /// <summary>
         /// Get entries from the position

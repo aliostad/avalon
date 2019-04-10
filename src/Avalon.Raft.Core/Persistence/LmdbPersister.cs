@@ -126,9 +126,9 @@ namespace Avalon.Raft.Core.Persistence
         public long LastEntryTerm { get; private set; } = -1;
 
         /// <inheritdocs/>
-        public void Append(LogEntry[] entries, long startingOffset)
+        public void Append(LogEntry[] entries, long? startingOffset = null)
         {
-            if (startingOffset != LastIndex + 1)
+            if (startingOffset.HasValue && startingOffset.Value != LastIndex + 1)
                 throw new InvalidOperationException($"Starting index is {startingOffset} but LastIndex is {LastIndex}");
             
             if (entries.Length == 0)
@@ -136,10 +136,11 @@ namespace Avalon.Raft.Core.Persistence
 
             lock (_lock)
             {
+                startingOffset = LastIndex + 1;
                 var indices = Enumerable.Range(0, entries.Length).Select(x => x + startingOffset);
                 using (var tx = _env.BeginTransaction())
                 {
-                    foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => new Bufferable(x.l.Body).PrefixWithIndexAndTerm(x.i, x.l.Term)))
+                    foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => new Bufferable(x.l.Body).PrefixWithIndexAndTerm(x.i.Value, x.l.Term)))
                     {
                         tx.Put(_logDb, LogKey, e, TransactionPutOptions.AppendDuplicateData);
                     }
@@ -152,6 +153,11 @@ namespace Avalon.Raft.Core.Persistence
                 {
                     throw new InvalidOperationException($"THIS IS BAD!! expected {startingOffset} + {entries.Length} but found {LastIndex}.");
                 }
+                if (LastEntryTerm != entries.Last().Term)
+                {
+                    throw new InvalidOperationException($"THIS IS BAD!! expected last term {entries.Last().Term} but found {LastEntryTerm}.");
+                }
+
             }
         }
 

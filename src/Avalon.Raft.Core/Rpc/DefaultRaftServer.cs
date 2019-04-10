@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using Polly;
+using System.Collections.Concurrent;
 
 namespace Avalon.Raft.Core.Rpc
 {
@@ -12,13 +13,12 @@ namespace Avalon.Raft.Core.Rpc
     {
         static class Queues
         {
-            public const string PeerAppendLog = "Peer-AppendLog-";
-            public const string PeerFactory = "PeerFactory-";
+            public const string PeerAppendLog = "Peer-AppendLog-"; // leaders
             public const string LogCommit = "LogCommit";
             public const string HeartBeatReceive = "HeartBeatReceive";
-            public const string HeartBeatSend = "HeartBeatSend";
+            public const string HeartBeatSend = "HeartBeatSend"; // leaders
             public const string Candidacy = "Candidacy";
-            public const string ApplyClientCommands = "ApplyClientCommands";
+            public const string ApplyClientCommands = "ApplyClientCommands"; // leaders
         }
 
         protected VolatileState _volatileState = new VolatileState();
@@ -37,7 +37,9 @@ namespace Avalon.Raft.Core.Rpc
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
         protected string _leaderAddress;
+        private BlockingCollection<StateMachineCommandRequest> _commands = new BlockingCollection<StateMachineCommandRequest>();
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
+        
 
         public Role Role => _role;
         public PersistentState State => _state;
@@ -97,6 +99,7 @@ namespace Avalon.Raft.Core.Rpc
             names.Add(Queues.Candidacy);
             names.Add(Queues.HeartBeatReceive);
             names.Add(Queues.HeartBeatSend);
+            names.Add(Queues.ApplyClientCommands);
 
             _workers = new WorkerPool(names.ToArray());
             _workers.Start();
@@ -125,6 +128,12 @@ namespace Avalon.Raft.Core.Rpc
                 new Job(hbs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
+            // sending heartbeat
+            Func<Task> pcq = ProcessCommandsQueue;
+            _workers.Enqueue(Queues.ApplyClientCommands,
+                new Job(pcq.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
+                TheTrace.LogPolicy().RetryForeverAsync()));
+
             TheTrace.TraceInformation("Setup finished.");
         }
 
@@ -132,6 +141,26 @@ namespace Avalon.Raft.Core.Rpc
 
         #region Work Streams
 
+        private Task ProcessCommandsQueue()
+        {
+            var entries = new List<LogEntry>();
+            StateMachineCommandRequest command;
+            while(_commands.TryTake(out command)) // we can set up a maximum but really we should accept all
+            {
+                entries.Add(new LogEntry(){
+                    Body = command.Command,
+                    Term = State.CurrentTerm
+                });
+            }
+
+            if (entries.Any())
+            {
+                _logPersister.Append(entries.ToArray());
+                TheTrace.TraceInformation($"His Majesty appended {entries.Count} entries.");
+            }
+            
+            return Task.CompletedTask;
+        }
         private Task HeartBeatReceive()
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds + 1);
@@ -201,7 +230,7 @@ namespace Avalon.Raft.Core.Rpc
                 var peers = _peerManager.GetPeers().ToArray();
                 var concensus = (peers.Length / 2) + 1;
                 var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
-                var retry = TheTrace.LogPolicy().RetryForeverAsync();
+                var retry = TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*30));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
                 var request = new RequestVoteRequest()
                 {
@@ -491,6 +520,8 @@ namespace Avalon.Raft.Core.Rpc
         {
             if (Role == Role.Leader)
             {
+                _commands.TryAdd(command);
+                TheTrace.TraceInformation($"Got a command from a client.");
                 return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
             }
             else if (_serverSettings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
@@ -520,6 +551,7 @@ namespace Avalon.Raft.Core.Rpc
         protected void OnRoleChanged(Role role)
         {
             State.LastVotedForId = null;
+            _commands = new BlockingCollection<StateMachineCommandRequest>(); // reset commands
             RoleChanged?.Invoke(this, new RoleChangedEventArgs(role));
         }
 
@@ -538,6 +570,7 @@ namespace Avalon.Raft.Core.Rpc
             var peers = _peerManager.GetPeers().ToArray();
             foreach(var peer in peers)
             {
+                TheTrace.TraceInformation($"setting up indices for peer {peer.Id}");
                 _volatileLeaderState.NextIndices[peer.Id] = _logPersister.LastIndex + 1;
                 _volatileLeaderState.MatchIndices[peer.Id] = -1L;
             }
@@ -556,11 +589,18 @@ namespace Avalon.Raft.Core.Rpc
 
         private void SetupPeerAppendLogJobs(IEnumerable<Peer> peers)
         {
+            foreach(var w in _workers.GetWorkers(Queues.PeerAppendLog))
+                w.Start();
+
             foreach(var p in peers)
             {
-                var todo = PeerAppendLog(p);
-                _workers.Enqueue(Queues.PeerAppendLog + p.Address,
-                    new Job(todo.ComposeLooper(TimeSpan.Zero), // the timeout is built into the job
+                var localP = p;
+                var q = Queues.PeerAppendLog + localP.Address;
+                TheTrace.TraceInformation($"setting up peer append log for queue {q}");
+                var todo = PeerAppendLog(localP);
+                
+                _workers.Enqueue(q,
+                    new Job(todo.ComposeLooper(TimeSpan.FromMilliseconds(30)), // the timeout is built into the job
                     TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*50))));
             }
         }
