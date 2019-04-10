@@ -35,7 +35,13 @@ namespace Avalon.Raft.Core.Tests
                     lock (_lock)
                     {
                         var message = $"{DateTime.Now.ToString("yyyy-MM-dd:HH-mm-ss.fff")}\t{_correlationId}\t{level}\t{(os.Length == 0 ? s : string.Format(s, os))}";
-                        _writer.WriteLine(message);
+                        try
+                        {
+                            _writer.WriteLine(message);
+                        }
+                        catch
+                        {
+                        }
                     }
                 };
             }
