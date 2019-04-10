@@ -285,9 +285,7 @@ namespace Avalon.Raft.Core.Tests
                 }
             );
 
-            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
-
             _server.LastHeartBeat = new AlwaysOldTimestamp();
 
             Thread.Sleep(3000);
@@ -314,7 +312,6 @@ namespace Avalon.Raft.Core.Tests
                 }
             );
 
-            _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _maqina.Object, _manijer.Object, settings);
 
             _server.LastHeartBeat = new AlwaysOldTimestamp();
@@ -333,9 +330,13 @@ namespace Avalon.Raft.Core.Tests
             
             Thread.Sleep(2000);
             
-            var timesFollowersServed = list.SelectMany(x => x.AllThemAppendEntriesRequests.Where(y => y.Entries.Length > 0)).Count();
+            var timesFollowersServed = list.SelectMany(x => {
+                var copy = x.AllThemAppendEntriesRequests.ToArray();
+                return copy.Where(y => y.Entries.Length > 0);
+            }).Count();
             _output.WriteLine($"timesFollowersServed: {timesFollowersServed}");
             Assert.True(timesFollowersServed > 1);
+            Assert.Equal(2, _sister.LastIndex);
         }
 
         private byte[][] GetSomeRandomEntries()
