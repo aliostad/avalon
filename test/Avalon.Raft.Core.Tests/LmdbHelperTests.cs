@@ -18,7 +18,7 @@ namespace Avalon.Raft.Core.Tests
         private readonly object _lock = new object();
         private readonly string _correlationId = Guid.NewGuid().ToString("N");
 
-        private const bool OutputTraceLog = true;
+        private const bool OutputTraceLog = false;
 
         public LmdbHelperTests()
         {
