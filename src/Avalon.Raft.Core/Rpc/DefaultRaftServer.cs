@@ -19,6 +19,7 @@ namespace Avalon.Raft.Core.Rpc
             public const string HeartBeatSend = "HeartBeatSend"; // leaders
             public const string Candidacy = "Candidacy";
             public const string ApplyClientCommands = "ApplyClientCommands"; // leaders
+            public const string CreateSnapshot = "CreateSnapshot"; // leaders
         }
 
         protected VolatileState _volatileState = new VolatileState();
@@ -30,6 +31,7 @@ namespace Avalon.Raft.Core.Rpc
 
         protected readonly IStateMachine _stateMachine;
         protected readonly ILogPersister _logPersister;
+        protected readonly ISnapshotOperator _snapshotOperator;
         protected readonly IPeerManager _peerManager;
         protected readonly RaftSettings _settings;
         protected readonly RaftServerSettings _serverSettings;
@@ -37,9 +39,17 @@ namespace Avalon.Raft.Core.Rpc
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
         protected string _leaderAddress;
+        private bool _isSnapshotting = false;
         private BlockingCollection<StateMachineCommandRequest> _commands = new BlockingCollection<StateMachineCommandRequest>();
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
-        
+            
+        #region For Testability
+
+        internal ISnapshotOperator SnapshotOperator => _snapshotOperator;
+
+        internal ILogPersister LogPersister => _logPersister;
+
+        #endregion
 
         public Role Role => _role;
         public PersistentState State => _state;
@@ -72,7 +82,8 @@ namespace Avalon.Raft.Core.Rpc
 
         public DefaultRaftServer(
             ILogPersister logPersister, 
-            IStatePersister statePersister, 
+            IStatePersister statePersister,
+            ISnapshotOperator snapshotOperator, 
             IStateMachine stateMachine,
             IPeerManager peerManager, 
             RaftSettings settings,
@@ -81,6 +92,7 @@ namespace Avalon.Raft.Core.Rpc
             _logPersister = logPersister;
             _peerManager = peerManager;
             _stateMachine = stateMachine;
+            _snapshotOperator = snapshotOperator;
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
             _serverSettings = serverSettings ?? new RaftServerSettings();
@@ -100,6 +112,7 @@ namespace Avalon.Raft.Core.Rpc
             names.Add(Queues.HeartBeatReceive);
             names.Add(Queues.HeartBeatSend);
             names.Add(Queues.ApplyClientCommands);
+            names.Add(Queues.CreateSnapshot);
 
             _workers = new WorkerPool(names.ToArray());
             _workers.Start();
@@ -128,11 +141,17 @@ namespace Avalon.Raft.Core.Rpc
                 new Job(hbs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
 
-            // sending heartbeat
+            // Applying commands received from the clients
             Func<Task> pcq = ProcessCommandsQueue;
             _workers.Enqueue(Queues.ApplyClientCommands,
                 new Job(pcq.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
                 TheTrace.LogPolicy().RetryForeverAsync()));
+
+            // Applying commands received from the clients
+            Func<Task> cs = CreateSnapshot;
+            _workers.Enqueue(Queues.CreateSnapshot,
+                new Job(cs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2)),
+                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i*i*50))));
 
             TheTrace.TraceInformation("Setup finished.");
         }
@@ -279,14 +298,48 @@ namespace Avalon.Raft.Core.Rpc
             var commitIndex = _volatileState.CommitIndex;
             var lastApplied = _volatileState.LastApplied;
 
-            if (commitIndex > lastApplied && _workers.IsEmpty(Queues.LogCommit)) // check ONLY if empty. NO RE-ENTRY
+            // NOTE: if snapshotting, it should not commit anything
+            if (!_isSnapshotting && commitIndex > lastApplied && _workers.IsEmpty(Queues.LogCommit)) // check ONLY if empty. NO RE-ENTRY
             {
-                // ADD BATCHING LATER
+                // TODO: ADD BATCHING LATER
                 await _stateMachine.ApplyAsync(
                     _logPersister.GetEntries(lastApplied + 1, (int)(commitIndex - lastApplied)));
 
                 _volatileState.LastApplied = commitIndex;
             }
+        }
+
+
+        private async Task CreateSnapshot()
+        {
+            if (_isSnapshotting)
+                _isSnapshotting = false; // previously crashed perhaps
+
+            var commitIndex = _volatileState.CommitIndex;
+            var safeIndex = commitIndex;
+            if (Role == Role.Leader)
+            {
+                var min = _volatileLeaderState.NextIndices.Values.Min();
+                safeIndex = Math.Min(safeIndex, min);
+            }
+
+            if (safeIndex - _logPersister.LogOffset < _settings.MinSnapshottingIndexInterval)
+                return; // no work
+            
+            safeIndex -= _settings.MinSnapshottingIndexInterval / 5; // to be safer
+            _isSnapshotting = true;
+            TheTrace.TraceInformation($"Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
+            var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex);
+            await _stateMachine.WriteSnapshotAsync(stream);
+            stream.Close();
+            TheTrace.TraceInformation($"Successfully created snapshot for safeIndex {safeIndex}");
+            _snapshotOperator.FinaliseSnapshot(safeIndex); // this changes LogOffset
+            TheTrace.TraceInformation($"Successfully finalised snapshot for safeIndex {safeIndex}");
+            _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
+            TheTrace.TraceInformation($"Successfully applied snapshot for safeIndex {safeIndex}");
+            _snapshotOperator.CleanSnapshots();
+            TheTrace.TraceInformation($"Successfully created and applied snapshot for SafeIndex: {safeIndex}");  
+            _isSnapshotting = false;          
         }
 
         private Func<Task> PeerAppendLog(Peer peer)
@@ -316,6 +369,9 @@ namespace Avalon.Raft.Core.Rpc
                     return; // nothing to do
 
                 var count = (int) Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex - nextIndex);
+                if (count < 1)
+                    return;
+
                 var proxy = _peerManager.GetProxy(peer.Address);
                 var retry = TheTrace.LogPolicy().RetryForeverAsync();
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
@@ -340,19 +396,13 @@ namespace Avalon.Raft.Core.Rpc
                     {
                         // If successful: update nextIndex and matchIndex for follower(§5.3)"
                         _volatileLeaderState.MatchIndices[peer.Id] = _volatileLeaderState.NextIndices[peer.Id] = nextIndex + count;
-                        TheTrace.TraceInformation("Successfully transferred {} entries from index {} to peer {}", count, nextIndex, peer.Id);
+                        TheTrace.TraceInformation($"Successfully transferred {count} entries from index {nextIndex} to peer {peer.Id}");
                         UpdateCommitIndex();
                     }
                     else
                     {
                         // log reason only
-                        TheTrace.TraceWarning("AppendEntries for start index {} and count {} for peer {} with address {} in term {} failed with this reason: ", 
-                            nextIndex,
-                            count,
-                            peer.Id,
-                            peer.Address,
-                            State.CurrentTerm,
-                            result.Result.Reason);
+                        TheTrace.TraceWarning($"AppendEntries for start index {nextIndex} and count {count} for peer {peer.Id} with address {peer.Address} in term {State.CurrentTerm} failed with this reason: {result.Result.Reason}");
 
                         if (result.Result.ReasonType == ReasonType.LogInconsistency)
                         {
@@ -362,7 +412,7 @@ namespace Avalon.Raft.Core.Rpc
                                 nextIndex - diff;
 
                             _volatileLeaderState.NextIndices[peer.Id] = nextIndex;
-                            TheTrace.TraceInformation("Updated (decremented) next index for peer {} to {}", peer.Id, nextIndex);
+                            TheTrace.TraceInformation($"Updated (decremented) next index for peer {peer.Id} to {nextIndex}");
                         }
                     }
                 }

@@ -10,7 +10,7 @@ namespace Avalon.Raft.Core.Persistence
 
         void SaveLastVotedFor(Guid? id);
 
-        void SaveTerm(long newTrem);
+        void SaveTerm(long newTerm);
 
         PersistentState Load();
 

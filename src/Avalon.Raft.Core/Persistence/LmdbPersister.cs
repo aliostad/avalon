@@ -26,16 +26,15 @@ namespace Avalon.Raft.Core.Persistence
 
         public class StateDbKeys
         {
-            public static readonly string LogOffset = "LogOffset";
             public static readonly string Id = "Id";
             public static readonly string CurrentTerm = "CurrentTerm";
             public static readonly string LastVotedFor = "LastVotedFor";
         }
 
-        public class Databases
+        class Databases
         {
             public static readonly string Log = "avalon_log";
-            public static readonly string State = "avalog_state";
+            public static readonly string State = "avalon_state";
         }
 
         /// <summary>
@@ -91,15 +90,15 @@ namespace Avalon.Raft.Core.Persistence
             using (var tx = _env.BeginReadOnlyTransaction())
             {
                 LoadLastTermAndIndex(tx);
-
-                Bufferable val = default;
-                if (tx.TryGet(_stateDb, StateDbKeys.LogOffset, out val))
-                {
-                    LogOffset = val;
-                }
-
+                
+                // snapshot
+                Snapshot ss;
+                if (TryGetLastSnapshot(out ss))
+                    LogOffset = ss.LastIncludedIndex + 1;
+                
+                // state
                 _state = new PersistentState();
-
+                Bufferable val;
                 if (tx.TryGet(_stateDb, StateDbKeys.Id, out val))
                 {
                     _state.Id = val;
@@ -246,8 +245,9 @@ namespace Avalon.Raft.Core.Persistence
             if (isFinal)
             {
                 var newOffset = lastIncludedIndex + 1;
-                TruncateLogUpToIndex(newOffset);
                 FinaliseSnapshot(lastIncludedIndex);
+                TruncateLogUpToIndex(newOffset);
+                
             }
         }
 
@@ -334,7 +334,7 @@ namespace Avalon.Raft.Core.Persistence
         public void FinaliseSnapshot(long lastIndexIncluded)
         {
             File.Move(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), _snapMgr.GetFinalFileNameForIndex(lastIndexIncluded));
-            this.LogOffset = lastIndexIncluded + 1;
+            this.LogOffset = lastIndexIncluded + 1; // this is it! if server goes down, it will find LogOffset from file names
         }
 
         /// <inheritdocs/>
@@ -353,17 +353,26 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public void SaveTerm(long newTrem)
+        public void SaveTerm(long newTerm)
         {
             lock (_lock) // TODO: unnecessary probably
             {
                 using (var tx = _env.BeginTransaction())
                 {
-                    tx.Put(_stateDb, StateDbKeys.CurrentTerm, newTrem);
+                    tx.Put(_stateDb, StateDbKeys.CurrentTerm, newTerm);
                     tx.Commit();
-                    _state.CurrentTerm = newTrem;
+                    _state.CurrentTerm = newTerm;
                 }
             }
+        }
+
+        /// <inheritdocs/>
+        public void ApplySnapshot(long newFirstIndex)
+        {
+            // this MUST be called after snapshot is finalised hence it checks if they are the same
+            if (newFirstIndex != LogOffset)
+                throw new InvalidOperationException($"Expecting newFirstIndex to be the same as LogOffset ({LogOffset}) but was {newFirstIndex}");
+            TruncateLogUpToIndex(newFirstIndex);
         }
     }
 }

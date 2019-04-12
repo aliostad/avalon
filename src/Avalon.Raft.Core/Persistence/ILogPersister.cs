@@ -44,7 +44,13 @@ namespace Avalon.Raft.Core.Persistence
         void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal);
 
         /// <summary>
-        /// In case of snapshotting, what is the offset of the log starting from
+        /// Deletes entries up to but not including an index. Useful during snapshotting
+        /// </summary>
+        /// <param name="index">Up to but NOT including this index</param>
+        void ApplySnapshot(long newFirstIndex);
+
+        /// <summary>
+        /// In case of snapshotting, this is what the offset of the log starting from
         /// </summary>
         long LogOffset { get; }
 
