@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading.Tasks;
 using Polly;
 using System.Collections.Concurrent;
+using System.IO;
 
 namespace Avalon.Raft.Core.Rpc
 {
@@ -33,8 +34,7 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly ILogPersister _logPersister;
         protected readonly ISnapshotOperator _snapshotOperator;
         protected readonly IPeerManager _peerManager;
-        protected readonly RaftSettings _settings;
-        protected readonly RaftServerSettings _serverSettings;
+        protected readonly RaftServerSettings _settings;
         protected int _candidateVotes;
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
@@ -86,8 +86,7 @@ namespace Avalon.Raft.Core.Rpc
             ISnapshotOperator snapshotOperator, 
             IStateMachine stateMachine,
             IPeerManager peerManager, 
-            RaftSettings settings,
-            RaftServerSettings serverSettings = null)
+            RaftServerSettings settings)
         {
             _logPersister = logPersister;
             _peerManager = peerManager;
@@ -95,7 +94,6 @@ namespace Avalon.Raft.Core.Rpc
             _snapshotOperator = snapshotOperator;
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
-            _serverSettings = serverSettings ?? new RaftServerSettings();
             SetupPool();
         }
 
@@ -344,7 +342,7 @@ namespace Avalon.Raft.Core.Rpc
 
         private Func<Task> PeerAppendLog(Peer peer)
         {
-            return async () =>
+            return () =>
             {
                 long nextIndex;
                 long matchIndex;
@@ -356,72 +354,131 @@ namespace Avalon.Raft.Core.Rpc
                 if (!hasMatch)
                 {
                     TheTrace.TraceWarning("Could not find peer with id {} and address {} in matchIndex dic.", peer.Id, peer.Address);
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 if (!hasNext)
                 {
                     TheTrace.TraceWarning("Could not find peer with id {} and address {} in nextIndex dic.", peer.Id, peer.Address);
-                    return;
+                    return Task.CompletedTask;
                 }
 
                 if (nextIndex > myLastIndex)
-                    return; // nothing to do
+                    return Task.CompletedTask; // nothing to do
 
                 var count = (int) Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex - nextIndex);
                 if (count < 1)
-                    return;
+                    return Task.CompletedTask;
 
                 var proxy = _peerManager.GetProxy(peer.Address);
                 var retry = TheTrace.LogPolicy().RetryForeverAsync();
-                var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
-                var previousIndexTerm = -1L;
-                if (nextIndex > 0)
-                    previousIndexTerm = _logPersister.GetEntries(nextIndex - 1, 1).First().Term;
+                var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
 
-                var request = new AppendEntriesRequest()
+                if (nextIndex < _logPersister.LogOffset)
                 {
-                    CurrentTerm = State.CurrentTerm,
-                    Entries = _logPersister.GetEntries(nextIndex, count).Select(x => x.Body).ToArray(),
-                    LeaderCommitIndex = _volatileState.CommitIndex,
-                    LeaderId = State.Id,
-                    PreviousLogIndex = nextIndex - 1,
-                    PreviousLogTerm = previousIndexTerm
-                };
-
-                var result = await policy.ExecuteAndCaptureAsync(() => proxy.AppendEntriesAsync(request));
-                if (result.Outcome == OutcomeType.Successful)
-                {
-                    if (result.Result.IsSuccess)
-                    {
-                        // If successful: update nextIndex and matchIndex for follower(§5.3)"
-                        _volatileLeaderState.MatchIndices[peer.Id] = _volatileLeaderState.NextIndices[peer.Id] = nextIndex + count;
-                        TheTrace.TraceInformation($"Successfully transferred {count} entries from index {nextIndex} to peer {peer.Id}");
-                        UpdateCommitIndex();
-                    }
-                    else
-                    {
-                        // log reason only
-                        TheTrace.TraceWarning($"AppendEntries for start index {nextIndex} and count {count} for peer {peer.Id} with address {peer.Address} in term {State.CurrentTerm} failed with this reason: {result.Result.Reason}");
-
-                        if (result.Result.ReasonType == ReasonType.LogInconsistency)
-                        {
-                            var diff = nextIndex - (matchIndex + 1);
-                            nextIndex = diff > _settings.MaxNumberOfDecrementForLogsThatAreBehind ?
-                                nextIndex - _settings.MaxNumberOfDecrementForLogsThatAreBehind :
-                                nextIndex - diff;
-
-                            _volatileLeaderState.NextIndices[peer.Id] = nextIndex;
-                            TheTrace.TraceInformation($"Updated (decremented) next index for peer {peer.Id} to {nextIndex}");
-                        }
-                    }
+                    return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }
                 else
                 {
-                    // NUNCA!!
-                    // not interested in network, etc errors, they get logged in the policy
+                    return SendSnapshot(proxy, policy, peer, nextIndex, matchIndex);
                 }
             };
+        }
+
+        private async Task SendSnapshot(
+            IRaftServer proxy,
+            AsyncPolicy policy,
+            Peer peer,
+            long nextIndex, 
+            long matchIndex)
+        {
+            var logOffset = LogPersister.LogOffset;
+            var term = State.CurrentTerm;
+            Snapshot ss;
+            if (!SnapshotOperator.TryGetLastSnapshot(out ss))
+                throw new InvalidProgramException($"WE DO NOT HAVE A SNAPSHOT for client {peer.Id} whose nextIndex is {nextIndex} yet our LogOffset is {logOffset}");
+            
+            if (ss.LastIncludedIndex + 1 < nextIndex)
+                throw new InvalidProgramException($"WE DO NOT HAVE A <<PROPER>> SNAPSHOT for client {peer.Id} whose nextIndex is {nextIndex} yet our LogOffset is {logOffset}. Snapshot was have ({ss.FullName}) is short {ss.LastIncludedIndex}");
+
+            // make a copy since it might be cleaned up or opened by another thread for another client
+            var fileName = Path.GetTempFileName();
+            File.Copy(ss.FullName, fileName);
+            
+            using(var fs = new FileStream(fileName, FileMode.Open))
+            {
+                var start = 0;
+                var length = fs.Length;
+                var buffer = new byte[_settings.MaxSnapshotChunkSentInBytes];
+                while(start < length)
+                {
+                    var count = fs.Read(buffer, 0, buffer.Length);
+                    var result = await proxy.InstallSnapshotAsync(new InstallSnapshotRequest(){
+                        CurrentTerm = term,
+                        Data = count == buffer.Length ? buffer : buffer.Take(count).ToArray(),
+                        LastIncludedIndex = ss.LastIncludedIndex
+                    });
+                    start += count;
+                }
+            }
+
+
+        }
+
+        private async Task SendLogs(
+            IRaftServer proxy,
+            AsyncPolicy policy,
+            Peer peer,
+            long nextIndex, 
+            long matchIndex,
+            int count)
+        {
+            var previousIndexTerm = -1L;
+            if (nextIndex > 0)
+                previousIndexTerm = _logPersister.GetEntries(nextIndex - 1, 1).First().Term;
+            
+            var request = new AppendEntriesRequest()
+            {
+                CurrentTerm = State.CurrentTerm,
+                Entries = _logPersister.GetEntries(nextIndex, count).Select(x => x.Body).ToArray(),
+                LeaderCommitIndex = _volatileState.CommitIndex,
+                LeaderId = State.Id,
+                PreviousLogIndex = nextIndex - 1,
+                PreviousLogTerm = previousIndexTerm
+            };
+
+            var result = await policy.ExecuteAndCaptureAsync(() => proxy.AppendEntriesAsync(request));
+            if (result.Outcome == OutcomeType.Successful)
+            {
+                if (result.Result.IsSuccess)
+                {
+                    // If successful: update nextIndex and matchIndex for follower(§5.3)"
+                    _volatileLeaderState.MatchIndices[peer.Id] = _volatileLeaderState.NextIndices[peer.Id] = nextIndex + count;
+                    TheTrace.TraceInformation($"Successfully transferred {count} entries from index {nextIndex} to peer {peer.Id}");
+                    UpdateCommitIndex();
+                }
+                else
+                {
+                    // log reason only
+                    TheTrace.TraceWarning($"AppendEntries for start index {nextIndex} and count {count} for peer {peer.Id} with address {peer.Address} in term {State.CurrentTerm} failed with this reason: {result.Result.Reason}");
+
+                    if (result.Result.ReasonType == ReasonType.LogInconsistency)
+                    {
+                        var diff = nextIndex - (matchIndex + 1);
+                        nextIndex = diff > _settings.MaxNumberOfDecrementForLogsThatAreBehind ?
+                            nextIndex - _settings.MaxNumberOfDecrementForLogsThatAreBehind :
+                            nextIndex - diff;
+
+                        _volatileLeaderState.NextIndices[peer.Id] = nextIndex;
+                        TheTrace.TraceInformation($"Updated (decremented) next index for peer {peer.Id} to {nextIndex}");
+                    }
+                }
+            }
+            else
+            {
+                // NUNCA!!
+                // not interested in network, etc errors, they get logged in the policy
+            }
         }
 
         internal void UpdateCommitIndex()
@@ -574,12 +631,12 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.TraceInformation($"Got a command from a client.");
                 return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
             }
-            else if (_serverSettings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
+            else if (_settings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
             {
                 var leaderProxy = _peerManager.GetProxy(_leaderAddress);
                 return leaderProxy.ApplyCommandAsync(command);
             }
-            else if (_serverSettings.RedirectStateMachineCommands && _leaderAddress != null)
+            else if (_settings.RedirectStateMachineCommands && _leaderAddress != null)
             {
                 return Task.FromResult(new StateMachineCommandResponse() 
                 {

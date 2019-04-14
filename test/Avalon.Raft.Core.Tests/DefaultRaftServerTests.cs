@@ -22,6 +22,7 @@ namespace Avalon.Raft.Core.Tests
         private readonly Mock<IStateMachine> _maqina;
         private readonly Mock<IRaftServer> _mockPeer;
         private DefaultRaftServer _server;
+        private RaftServerSettings _settings;
         private readonly object _lock = new object();
         private readonly string _correlationId = Guid.NewGuid().ToString("N");
         private StreamWriter _writer;
@@ -33,6 +34,8 @@ namespace Avalon.Raft.Core.Tests
         public DefaultRaftServerTests(ITestOutputHelper output)
         {
             _output = output;
+            _settings = new RaftServerSettings();
+            _settings.ElectionTimeoutMin = _settings.ElectionTimeoutMax = _settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _directory = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
             _sister = new LmdbPersister(_directory);
             _manijer = new Mock<IPeerManager>();
@@ -67,12 +70,9 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void PerpetualCandidacyWhenDealingWithLazyPeers()
         {
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new LazyPeer());
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             Thread.Sleep(2000);
             Assert.Equal(Role.Candidate, _server.Role);
@@ -81,13 +81,10 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void FriendlyPeersWithOneAngryNotABigDeal()
         {
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new FriendlyPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             Thread.Sleep(1000);
             Assert.Equal(Role.Leader, _server.Role);
@@ -96,12 +93,10 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void BackStabberPeersMakeYouFollower()
         {
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new BackStabberPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y == "7"))).Returns(new FriendlyPeer());
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             TheTrace.TraceInformation("OK, now this is before wait...");
             Thread.Sleep(300);
@@ -117,9 +112,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             // to set the term to 1
             await _server.AppendEntriesAsync(new AppendEntriesRequest()
@@ -154,9 +147,7 @@ namespace Avalon.Raft.Core.Tests
         public async Task NeverVotesYesToLowerTerm()
         {
             var leaderId = Guid.NewGuid();
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             // to set the term to 1
             var result = await _server.RequestVoteAsync(new RequestVoteRequest()
@@ -187,9 +178,7 @@ namespace Avalon.Raft.Core.Tests
         public async Task VotesYesToTheRightGuy()
         {
             var leaderId = Guid.NewGuid();
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
             _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
@@ -212,9 +201,7 @@ namespace Avalon.Raft.Core.Tests
         public async Task NeverVotesTwice()
         {
             var leaderId = Guid.NewGuid();
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
             _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
@@ -245,9 +232,7 @@ namespace Avalon.Raft.Core.Tests
         public async Task RunsErrandsForLogs()
         {
             var leaderId = Guid.NewGuid();
-            var settings = new RaftSettings();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             // has to be done - otherwise it becomes a candidate
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
@@ -278,9 +263,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void LeadsFollowersAndTheirHeartbeatLikeALeader()
         {
-            var settings = new RaftSettings();
             var list = new List<FriendlyPeer>();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
 
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
@@ -291,7 +274,7 @@ namespace Avalon.Raft.Core.Tests
                 }
             );
 
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
             _server.LastHeartBeat = new AlwaysOldTimestamp();
 
             Thread.Sleep(3000);
@@ -305,9 +288,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task LeadsFollowersAndTheirLogsLikeALeader()
         {
-            var settings = new RaftSettings();
             var list = new List<FriendlyPeer>();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
 
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
@@ -318,7 +299,7 @@ namespace Avalon.Raft.Core.Tests
                 }
             );
 
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             _server.LastHeartBeat = new AlwaysOldTimestamp();
 
@@ -348,12 +329,8 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task CreatesSnapshotAsALeader()
         {
-            var settings = new RaftSettings()
-            {
-                MinSnapshottingIndexInterval = 10
-            };
+            _settings.MinSnapshottingIndexInterval = 10L;
             var list = new List<FriendlyPeer>();
-            settings.ElectionTimeoutMin = settings.ElectionTimeoutMax = settings.CandidacyTimeout = TimeSpan.FromMilliseconds(200);
 
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(_mockPeer.Object);
@@ -367,7 +344,7 @@ namespace Avalon.Raft.Core.Tests
                 new AppendEntriesResponse(1, true)
             );
             
-            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, settings);
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
 
             _server.LastHeartBeat = new AlwaysOldTimestamp();
 
