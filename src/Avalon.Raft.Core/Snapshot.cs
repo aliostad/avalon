@@ -11,7 +11,7 @@ namespace Avalon.Raft.Core
     public class Snapshot
     {
         /// <summary>
-        /// Full name
+        /// Full file name
         /// </summary>
         public string FullName { get; set; }
 
@@ -20,5 +20,9 @@ namespace Avalon.Raft.Core
         /// </summary>
         public long LastIncludedIndex { get; set; }
 
+        /// <summary>
+        /// Term the last log entry when the snapshot was created
+        /// </summary>
+        public long LastIncludedTerm {get; set;}
     }
 }

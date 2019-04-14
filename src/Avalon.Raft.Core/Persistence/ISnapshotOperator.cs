@@ -23,13 +23,15 @@ namespace Avalon.Raft.Core.Persistence
         /// Prepares a (file) stream for next snapshot
         /// </summary>
         /// <param name="lastIndexIncluded">Index of the last log entry applied</param>
+        /// <param name="LastTerm">Term of the last log entry applied</param>
         /// <returns>Returns the snapshot stream to be writteb to</returns>
-        Stream GetNextSnapshotStream(long lastIndexIncluded);
+        Stream GetNextSnapshotStream(long lastIndexIncluded, long lastTerm);
 
         /// <summary>
         /// Stream is now complete with the snapshot and needs to be finalised
         /// </summary>
         /// <param name="lastIndexIncluded">Index of the last log entry applied</param>
-        void FinaliseSnapshot(long lastIndexIncluded);
+        /// <param name="LastTerm">Term of the last log entry applied</param>
+        void FinaliseSnapshot(long lastIndexIncluded, long lastTerm);
     }
 }

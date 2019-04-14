@@ -22,7 +22,7 @@ namespace Avalon.Raft.Core.Persistence
         private PersistentState _state = null;
         private readonly Database _logDb;
         private readonly Database _stateDb;
-        private readonly IndexedFileManager _snapMgr;
+        private readonly SnapshotManager _snapMgr;
 
         public class StateDbKeys
         {
@@ -51,7 +51,7 @@ namespace Avalon.Raft.Core.Persistence
             _env.MapSize = mapSize;
             _env.Open();
 
-            _snapMgr = new IndexedFileManager(_directory);
+            _snapMgr = new SnapshotManager(_directory);
 
             _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 });
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
@@ -190,10 +190,10 @@ namespace Avalon.Raft.Core.Persistence
         public LogEntry[] GetEntries(long index, int count)
         {
             if (index < LogOffset)
-                throw new InvalidOperationException($"Entry not available and is part of snapshot. index: {index}, count: {count} and LogOffset: {LogOffset}");
+                throw new EntriesNotAvailableAnymoreException(index, LogOffset);
 
             if (index + count - 1 > LastIndex)
-                throw new InvalidOperationException($"We do not have these entries. index: {index}, count: {count} and LastIndex: {LastIndex}");
+                throw new InvalidOperationException($"We do not have these entries yet. index: {index}, count: {count} and LastIndex: {LastIndex}");
 
             var list = new LogEntry[count];
             using (var tx = _env.BeginReadOnlyTransaction())
@@ -219,9 +219,9 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal)
+        public void WriteSnapshot(long lastIncludedIndex, long lastTerm, byte[] chunk, long offsetInFile, bool isFinal)
         {
-            var fileName = _snapMgr.GetTempFileNameForIndex(lastIncludedIndex);
+            var fileName = _snapMgr.GetTempFileNameForIndexAndTerm(lastIncludedIndex, lastTerm);
             Stream stream = null;
             if (File.Exists(fileName))
             {
@@ -245,7 +245,7 @@ namespace Avalon.Raft.Core.Persistence
             if (isFinal)
             {
                 var newOffset = lastIncludedIndex + 1;
-                FinaliseSnapshot(lastIncludedIndex);
+                FinaliseSnapshot(lastIncludedIndex, lastTerm);
                 TruncateLogUpToIndex(newOffset);
                 
             }
@@ -319,7 +319,7 @@ namespace Avalon.Raft.Core.Persistence
         }
         
         /// <inheritdocs/>
-        public Stream GetNextSnapshotStream(long lastIndexIncluded)
+        public Stream GetNextSnapshotStream(long lastIndexIncluded, long lastTerm)
         {
             if (lastIndexIncluded <= LogOffset)
                 throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is less or equal to LogOffset of {LogOffset}");
@@ -327,29 +327,23 @@ namespace Avalon.Raft.Core.Persistence
             if (lastIndexIncluded > LastIndex)
                 throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is greater than LastIndex of {LastIndex}");
 
-            return new FileStream(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), FileMode.OpenOrCreate);
+            return new FileStream(_snapMgr.GetTempFileNameForIndexAndTerm(lastIndexIncluded, lastTerm), FileMode.OpenOrCreate);
         }
 
         /// <inheritdocs/>
-        public void FinaliseSnapshot(long lastIndexIncluded)
+        public void FinaliseSnapshot(long lastIndexIncluded, long lastTerm)
         {
-            File.Move(_snapMgr.GetTempFileNameForIndex(lastIndexIncluded), _snapMgr.GetFinalFileNameForIndex(lastIndexIncluded));
+            File.Move(
+                _snapMgr.GetTempFileNameForIndexAndTerm(lastIndexIncluded, lastTerm), 
+                _snapMgr.GetFinalFileNameForIndexAndTerm(lastIndexIncluded, lastTerm));
             this.LogOffset = lastIndexIncluded + 1; // this is it! if server goes down, it will find LogOffset from file names
         }
 
         /// <inheritdocs/>
         public bool TryGetLastSnapshot(out Snapshot snapshot)
         {
-            var index = _snapMgr.GetLastFinalIndex();
-            snapshot = null;
-            if (index.HasValue)
-                snapshot = new Snapshot()
-                {
-                    LastIncludedIndex = index.Value,
-                    FullName = _snapMgr.GetFinalFileNameForIndex(index.Value)
-                };
-
-            return index.HasValue;
+            snapshot = _snapMgr.GetLastSnapshot();
+            return snapshot != null;
         }
 
         /// <inheritdocs/>

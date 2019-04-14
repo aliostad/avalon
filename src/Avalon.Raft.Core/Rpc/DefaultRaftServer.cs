@@ -314,24 +314,25 @@ namespace Avalon.Raft.Core.Rpc
                 _isSnapshotting = false; // previously crashed perhaps
 
             var commitIndex = _volatileState.CommitIndex;
+            var term = State.CurrentTerm;
             var safeIndex = commitIndex;
             if (Role == Role.Leader)
             {
                 var min = _volatileLeaderState.NextIndices.Values.Min();
-                safeIndex = Math.Min(safeIndex, min);
+                if (min < commitIndex)
+                    return;
             }
 
             if (safeIndex - _logPersister.LogOffset < _settings.MinSnapshottingIndexInterval)
                 return; // no work
             
-            safeIndex -= _settings.MinSnapshottingIndexInterval / 5; // to be safer
             _isSnapshotting = true;
             TheTrace.TraceInformation($"Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
-            var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex);
+            var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex, term);
             await _stateMachine.WriteSnapshotAsync(stream);
             stream.Close();
             TheTrace.TraceInformation($"Successfully created snapshot for safeIndex {safeIndex}");
-            _snapshotOperator.FinaliseSnapshot(safeIndex); // this changes LogOffset
+            _snapshotOperator.FinaliseSnapshot(safeIndex, term); // this changes LogOffset
             TheTrace.TraceInformation($"Successfully finalised snapshot for safeIndex {safeIndex}");
             _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
             TheTrace.TraceInformation($"Successfully applied snapshot for safeIndex {safeIndex}");
@@ -576,7 +577,7 @@ namespace Avalon.Raft.Core.Rpc
             if (request.CurrentTerm > State.CurrentTerm)
                 BecomeFollower(request.CurrentTerm);
 
-            _logPersister.WriteSnapshot(request.LastIncludedIndex, request.Data, request.Offset, request.IsDone);
+            _logPersister.WriteSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
             if (request.IsDone)
             {
                 // TODO: rebuild state from snapshot

@@ -201,6 +201,7 @@ namespace Avalon.Raft.Core.Tests
         public void CanRunSnapshotSimulationAndCantReadBeforeLogOffset()
         {
             const int BatchSize = 100;
+            const long term = 42L;
             for (int i = 0; i < 1000; i++)
             {
                 var entries = Enumerable.Range(i * BatchSize, BatchSize).Select(x => 
@@ -208,7 +209,7 @@ namespace Avalon.Raft.Core.Tests
                     var b = (Bufferable)Guid.NewGuid();
                     return new LogEntry()
                     {
-                        Term = 42L,
+                        Term = term,
                         Body = b.Buffer
                     };
                 }).ToArray();
@@ -216,10 +217,10 @@ namespace Avalon.Raft.Core.Tests
             }
 
             var lastIncludedIndex = 10_000L - 1;
-            var stream = _persister.GetNextSnapshotStream(lastIncludedIndex);
+            var stream = _persister.GetNextSnapshotStream(lastIncludedIndex, term);
             stream.Write(new byte[1024], 0, 1024);
             stream.Close();
-            _persister.FinaliseSnapshot(lastIncludedIndex);
+            _persister.FinaliseSnapshot(lastIncludedIndex, term);
             Assert.Equal(lastIncludedIndex + 1, _persister.LogOffset);
             Snapshot snap = null;
             Assert.True(_persister.TryGetLastSnapshot(out snap));
@@ -231,10 +232,11 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanDoSnapshotLikeAKing()
         {
+            const long term = 42L;
             LogEntry l = new LogEntry()
             {
                 Body = new byte[] { 1, 2, 3, 4 },
-                Term = 42L
+                Term = term
             };
 
             _persister.Append(new[] { l }, 0);
@@ -245,10 +247,10 @@ namespace Avalon.Raft.Core.Tests
             _persister.Append(new[] { l }, 5);
 
 
-            _persister.WriteSnapshot(4, new byte[] { 1 }, 0, false);
-            _persister.WriteSnapshot(4, new byte[] { 2 }, 1, false);
-            _persister.WriteSnapshot(4, new byte[] { 3 }, 2, false);
-            _persister.WriteSnapshot(4, new byte[] { 4 }, 3, true);
+            _persister.WriteSnapshot(4, term, new byte[] { 1 }, 0, false);
+            _persister.WriteSnapshot(4, term, new byte[] { 2 }, 1, false);
+            _persister.WriteSnapshot(4, term, new byte[] { 3 }, 2, false);
+            _persister.WriteSnapshot(4, term, new byte[] { 4 }, 3, true);
 
             Assert.Equal(5, _persister.LogOffset);
             Snapshot snap;

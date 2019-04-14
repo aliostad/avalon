@@ -37,11 +37,12 @@ namespace Avalon.Raft.Core.Persistence
         /// <summary>
         /// Write a snapshot chunk
         /// </summary>
-        /// <param name="lastIncludedIndex">Lats included index in the whole snapshot</param>
+        /// <param name="lastIncludedIndex">Last included index in the whole snapshot</param>
+        /// <param name="lastTerm">Term of the last log entry</param>
         /// <param name="chunk">chunk of the snapshot to be written</param>
         /// <param name="offsetInFile">position of the data in the snapshot file</param>
         /// <param name="isFinal">whether this is the last chunk</param>
-        void WriteSnapshot(long lastIncludedIndex, byte[] chunk, long offsetInFile, bool isFinal);
+        void WriteSnapshot(long lastIncludedIndex, long lastTerm, byte[] chunk, long offsetInFile, bool isFinal);
 
         /// <summary>
         /// Deletes entries up to but not including an index. Useful during snapshotting
