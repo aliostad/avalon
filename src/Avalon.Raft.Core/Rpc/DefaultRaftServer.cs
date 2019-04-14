@@ -375,7 +375,7 @@ namespace Avalon.Raft.Core.Rpc
                 var retry = TheTrace.LogPolicy().RetryForeverAsync();
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
 
-                if (nextIndex < _logPersister.LogOffset)
+                if (nextIndex <= _logPersister.LogOffset)
                 {
                     return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }

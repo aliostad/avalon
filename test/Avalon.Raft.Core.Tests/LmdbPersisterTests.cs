@@ -225,7 +225,7 @@ namespace Avalon.Raft.Core.Tests
             Snapshot snap = null;
             Assert.True(_persister.TryGetLastSnapshot(out snap));
             Assert.Equal(lastIncludedIndex, snap.LastIncludedIndex);
-            Assert.ThrowsAny<InvalidOperationException>(() => _persister.GetEntries(lastIncludedIndex, 1));
+            Assert.ThrowsAny<EntriesNotAvailableAnymoreException>(() => _persister.GetEntries(lastIncludedIndex, 1));
         }
 
         
@@ -254,7 +254,7 @@ namespace Avalon.Raft.Core.Tests
 
             Assert.Equal(5, _persister.LogOffset);
             Snapshot snap;
-            _persister.TryGetLastSnapshot(out snap);
+            Assert.True(_persister.TryGetLastSnapshot(out snap));
             Assert.Equal(4, snap.LastIncludedIndex);
         }
 

@@ -54,7 +54,7 @@ namespace Avalon.Raft.Core
                 if(!IsTemp(f))
                 {
                     var ss = GetSnapshot(f);
-                    if (ss == null || snap.LastIncludedIndex < ss.LastIncludedIndex)
+                    if (ss == null || snap == null || snap.LastIncludedIndex < ss.LastIncludedIndex)
                     {
                         snap = ss;
                     }
@@ -72,7 +72,7 @@ namespace Avalon.Raft.Core
             foreach (var f in Directory.GetFiles(_directory, "*.snapshot*"))
             {
                 var ss = GetSnapshot(f);
-                if (ss == null || ss.LastIncludedIndex < snap.LastIncludedIndex)
+                if (snap == null || ss.LastIncludedIndex < snap.LastIncludedIndex)
                     list.Add(f);
             }
 

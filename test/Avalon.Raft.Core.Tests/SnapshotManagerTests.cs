@@ -79,12 +79,13 @@ namespace Avalon.Raft.Core.Tests
             var term = 2L;
             File.WriteAllText(_mgr.GetTempFileNameForIndexAndTerm(index - 1, term), "");
             File.WriteAllText(_mgr.GetTempFileNameForIndexAndTerm(index + 1, term), "");
-            File.WriteAllText(_mgr.GetTempFileNameForIndexAndTerm(index, term), "");
-            File.WriteAllText(_mgr.GetTempFileNameForIndexAndTerm(index - 1, term), "");
+            File.WriteAllText(_mgr.GetTempFileNameForIndexAndTerm(index - 2, term), "");
+            File.WriteAllText(_mgr.GetFinalFileNameForIndexAndTerm(index, term), "");
             var perv = _mgr.GetPreviousSnapshots();
+            var lastIndex = _mgr.GetLastSnapshot().LastIncludedIndex;
             Assert.Equal(2, perv.Count());
             foreach (var f in perv)
-                Assert.True(_mgr.GetLastSnapshot().LastIncludedIndex < index);
+                Assert.True(_mgr.GetSnapshot(f).LastIncludedIndex < index);
 
         }
     }
