@@ -375,7 +375,7 @@ namespace Avalon.Raft.Core.Rpc
                 var retry = TheTrace.LogPolicy().RetryForeverAsync();
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
 
-                if (nextIndex <= _logPersister.LogOffset)
+                if (nextIndex >= _logPersister.LogOffset)
                 {
                     return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }
@@ -409,21 +409,31 @@ namespace Avalon.Raft.Core.Rpc
             using(var fs = new FileStream(fileName, FileMode.Open))
             {
                 var start = 0;
+                var total = 0;
                 var length = fs.Length;
                 var buffer = new byte[_settings.MaxSnapshotChunkSentInBytes];
-                while(start < length)
+                while(total < length)
                 {
                     var count = fs.Read(buffer, 0, buffer.Length);
+                    total += count;
                     var result = await proxy.InstallSnapshotAsync(new InstallSnapshotRequest(){
                         CurrentTerm = term,
                         Data = count == buffer.Length ? buffer : buffer.Take(count).ToArray(),
-                        LastIncludedIndex = ss.LastIncludedIndex
+                        LastIncludedIndex = ss.LastIncludedIndex,
+                        LastIncludedTerm = term,
+                        IsDone = total == length,
+                        LeaderId = State.Id,
+                        Offset = start
                     });
                     start += count;
+                    if (result.CurrentTerm != term)
+                        TheTrace.TraceWarning($"I am sending snapshot but this peer {peer.Id} has term {result.CurrentTerm} vs my started term {term} and current term {State.CurrentTerm}.");
                 }
             }
 
-
+            _volatileLeaderState.MatchIndices[peer.Id] = ss.LastIncludedIndex;
+            _volatileLeaderState.NextIndices[peer.Id] = ss.LastIncludedIndex + 1; // the rest will be done by sending logs
+            File.Delete(fileName);
         }
 
         private async Task SendLogs(
