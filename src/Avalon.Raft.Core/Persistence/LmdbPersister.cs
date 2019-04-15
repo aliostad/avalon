@@ -94,7 +94,7 @@ namespace Avalon.Raft.Core.Persistence
                 // snapshot
                 Snapshot ss;
                 if (TryGetLastSnapshot(out ss))
-                    LogOffset = ss.LastIncludedIndex + 1;
+                    LogOffset = ss.LastIncludedIndex;
                 
                 // state
                 _state = new PersistentState();
@@ -116,7 +116,7 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public long LogOffset { get; private set; } = 0;
+        public long LogOffset { get; private set; } = -1;
 
         /// <inheritdocs/>
         public long LastIndex { get; private set; } = -1;
@@ -189,7 +189,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public LogEntry[] GetEntries(long index, int count)
         {
-            if (index < LogOffset)
+            if (index <= LogOffset)
                 throw new EntriesNotAvailableAnymoreException(index, LogOffset);
 
             if (index + count - 1 > LastIndex)
@@ -336,7 +336,7 @@ namespace Avalon.Raft.Core.Persistence
             File.Move(
                 _snapMgr.GetTempFileNameForIndexAndTerm(lastIndexIncluded, lastTerm), 
                 _snapMgr.GetFinalFileNameForIndexAndTerm(lastIndexIncluded, lastTerm));
-            this.LogOffset = lastIndexIncluded + 1; // this is it! if server goes down, it will find LogOffset from file names
+            this.LogOffset = lastIndexIncluded; // this is it! if server goes down, it will find LogOffset from file names
         }
 
         /// <inheritdocs/>

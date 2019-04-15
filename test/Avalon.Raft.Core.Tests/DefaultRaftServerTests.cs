@@ -263,7 +263,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void LeadsFollowersAndTheirHeartbeatLikeALeader()
         {
-            var list = new List<FriendlyPeer>();
+            var list = new ConcurrentBag<FriendlyPeer>();
 
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
@@ -288,7 +288,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public async Task LeadsFollowersAndTheirLogsLikeALeader()
         {
-            var list = new List<FriendlyPeer>();
+            var list = new ConcurrentBag<FriendlyPeer>();
 
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(
@@ -330,8 +330,6 @@ namespace Avalon.Raft.Core.Tests
         public async Task CreatesSnapshotAsALeader()
         {
             _settings.MinSnapshottingIndexInterval = 10L;
-            var list = new List<FriendlyPeer>();
-
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(_mockPeer.Object);
             _mockPeer.Setup(x => x.RequestVoteAsync(It.IsAny<RequestVoteRequest>())).ReturnsAsync(
@@ -360,6 +358,43 @@ namespace Avalon.Raft.Core.Tests
             Thread.Sleep(3000);
             _mockPeer.VerifyAll();
         }
+
+        [Fact]
+        public async Task CreatesSnapshotAsAFollower()
+        {
+            var leaderId = Guid.NewGuid();
+            _settings.MinSnapshottingIndexInterval = 10L;
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            var term = 1;
+            var count = 15L;
+            var entry = new byte[122];
+            var entries = new [] {entry};
+
+            for (int i = 0; i < count; i++)
+            {
+                await _server.AppendEntriesAsync(new AppendEntriesRequest()
+                {
+                    CurrentTerm = term,
+                    Entries = entries,
+                    LeaderCommitIndex = i-1,
+                    LeaderId = leaderId,
+                    PreviousLogIndex = i-1,
+                    PreviousLogTerm = term
+                });
+            }
+
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
+
+            Thread.Sleep(1000); // must be a leader by now            
+            Assert.Equal(Role.Follower, _server.Role);
+            Snapshot ss;
+            Assert.True(_server.SnapshotOperator.TryGetLastSnapshot(out ss));
+            Assert.Equal(count - 2, ss.LastIncludedIndex); // last index is 14 and PreviousLogIndex is set to i-1 => 13
+            Assert.Equal(term, ss.LastIncludedTerm);
+            Assert.Equal(count - 2, _server.LogPersister.LogOffset);
+        }
+
 
         private byte[][] GetSomeRandomEntries()
         {
