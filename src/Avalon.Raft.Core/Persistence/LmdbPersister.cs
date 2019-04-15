@@ -364,8 +364,8 @@ namespace Avalon.Raft.Core.Persistence
         public void ApplySnapshot(long newFirstIndex)
         {
             // this MUST be called after snapshot is finalised hence it checks if they are the same
-            if (newFirstIndex != LogOffset)
-                throw new InvalidOperationException($"Expecting newFirstIndex to be the same as LogOffset ({LogOffset}) but was {newFirstIndex}");
+            if (newFirstIndex - 1 != LogOffset)
+                throw new InvalidOperationException($"Expecting newFirstIndex to be as LogOffset+1 ({LogOffset}+1) but was {newFirstIndex}");
             TruncateLogUpToIndex(newFirstIndex);
         }
     }

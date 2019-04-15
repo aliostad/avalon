@@ -360,6 +360,61 @@ namespace Avalon.Raft.Core.Tests
         }
 
         [Fact]
+        public async Task LeaderSendsSnapshotForAClientSoBehind()
+        {
+            _settings.MinSnapshottingIndexInterval = 10L;
+            var term = 1L;
+            _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(s => s != "1"))).Returns(_mockPeer.Object);
+            var behindPeer = new Mock<IRaftServer>();
+            _manijer.Setup(x => x.GetProxy(It.Is<string>(s => s == "1"))).Returns(behindPeer.Object);
+            _mockPeer.Setup(x => x.RequestVoteAsync(It.IsAny<RequestVoteRequest>())).ReturnsAsync(
+                new RequestVoteResponse(){
+                    CurrentTerm = term,
+                    VoteGranted = true
+                }
+            );
+
+            behindPeer.Setup(x => x.RequestVoteAsync(It.IsAny<RequestVoteRequest>())).ReturnsAsync(
+                new RequestVoteResponse(){
+                    CurrentTerm = term,
+                    VoteGranted = true
+                }
+            );
+            
+            _mockPeer.Setup(x => x.AppendEntriesAsync(It.IsAny<AppendEntriesRequest>())).ReturnsAsync(
+                new AppendEntriesResponse(term, true)
+            );
+            
+            behindPeer.Setup(x => x.AppendEntriesAsync(It.IsAny<AppendEntriesRequest>())).ReturnsAsync(
+                new AppendEntriesResponse(term, false), TimeSpan.FromMilliseconds(50)
+            );
+
+            // should be called for installing snapshot
+            behindPeer.Setup(x => x.InstallSnapshotAsync(It.Is<InstallSnapshotRequest>(req => 
+                req.CurrentTerm == term && req.LastIncludedIndex == 13
+            ))).ReturnsAsync(
+                new InstallSnapshotResponse() { CurrentTerm = term }
+            );
+
+            _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+
+            _server.LastHeartBeat = new AlwaysOldTimestamp();
+
+            Thread.Sleep(1000); // must be a leader by now            
+            Assert.Equal(Role.Leader, _server.Role);
+            for(var i=0;i<15;i++)
+            {
+                await _server.ApplyCommandAsync(new StateMachineCommandRequest(){
+                    Command = new byte[128]
+                });
+            }
+        
+            Thread.Sleep(3000);
+            _mockPeer.VerifyAll();
+            behindPeer.VerifyAll();
+        }
+        [Fact]
         public async Task CreatesSnapshotAsAFollower()
         {
             var leaderId = Guid.NewGuid();

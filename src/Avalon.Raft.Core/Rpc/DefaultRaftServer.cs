@@ -316,12 +316,10 @@ namespace Avalon.Raft.Core.Rpc
             var commitIndex = _volatileState.CommitIndex;
             var term = State.CurrentTerm;
             var safeIndex = commitIndex;
-            if (Role == Role.Leader)
-            {
-                var min = _volatileLeaderState.NextIndices.Values.Min();
-                if (min < commitIndex)
-                    return;
-            }
+
+            // NOTE: Here used to be a code looking at the minimum LastIndex and set SafeIndex to 
+            // min(thatValue, commitIndex) if this was a Leader for the benefit of those 
+            // peers that were so behind. But removed since these peers will be using Snapshots
 
             if (safeIndex - _logPersister.LogOffset < _settings.MinSnapshottingIndexInterval)
                 return; // no work
@@ -404,7 +402,7 @@ namespace Avalon.Raft.Core.Rpc
 
             // make a copy since it might be cleaned up or opened by another thread for another client
             var fileName = Path.GetTempFileName();
-            File.Copy(ss.FullName, fileName);
+            File.Copy(ss.FullName, fileName, true);
             
             using(var fs = new FileStream(fileName, FileMode.Open))
             {

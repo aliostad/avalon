@@ -2,6 +2,7 @@
 using Spreads.Buffers;
 using Spreads;
 using System.Runtime.CompilerServices;
+using System;
 
 namespace Avalon.Common
 {
@@ -76,9 +77,20 @@ namespace Avalon.Common
 
                     while (c.Delete(false))
                     {
-                        c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent);
-                        if (valdb.IsEmpty)
-                            break;
+                        try
+                        {
+                            c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent);
+                            if (valdb.IsEmpty)
+                                break;
+
+                        }
+                        catch (LMDBException e)
+                        {
+                            if (e.Message.StartsWith("Invalid argument"))
+                                break; // empty database now
+                            else
+                                throw;
+                        }
 
                         var currentValue = valdb.ReadInt64(0);
                         if (currentValue == value)
