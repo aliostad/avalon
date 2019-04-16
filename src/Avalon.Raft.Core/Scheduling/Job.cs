@@ -58,6 +58,7 @@ namespace Avalon.Raft.Core.Scheduling
             _work = work;
             _policy = policy;
             _callback = callback;
+            _loopDelay = loopDelay;
         }
 
         public async Task DoAsync(CancellationToken token)
