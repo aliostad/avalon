@@ -68,7 +68,8 @@ namespace Avalon.Raft.Core.Scheduling
                 {
                     var job = _q.Take(_cancel.Token);
                     // yes, running async in sync because cannot leave these to threadpool to do. Too important to do that, cannot afford to face thread exhaustion
-                    job.DoAsync(_cancel.Token).GetAwaiter().GetResult(); 
+                    job.DoAsync(_cancel.Token).ConfigureAwait(false).GetAwaiter().GetResult(); 
+                    TheTrace.TraceInformation($"Job in the worker {this.Name} finished. Current QueueLength is {QueueDepth}.");
                 }
                 catch (OperationCanceledException ce)
                 {
@@ -78,7 +79,7 @@ namespace Avalon.Raft.Core.Scheduling
                 {
                     TheTrace.TraceError($"Job errorred: {e}");
                 }
-            }
+            }            
         }
 
         public void Dispose()

@@ -34,32 +34,56 @@ namespace Avalon.Raft.Core
             };
         }
 
-        public static Func<CancellationToken, Task> ComposeLooper(this Action action, TimeSpan timeout)
+        public static Func<CancellationToken, Task> ComposeLooper(this Action action, TimeSpan timeout, string name)
         {
             return (c) =>
             {
-                while (!c.IsCancellationRequested)
+                try
                 {
-                    if (!c.WaitHandle.WaitOne(timeout))
+                    while (!c.IsCancellationRequested)
                     {
-                        action();
+                        if (!c.WaitHandle.WaitOne(timeout))
+                        {
+                            action();
+                        }
+                        else
+                        {
+                            TheTrace.TraceInformation($"Received a signal so end is nigh - {name}");
+                        }
                     }
-                }
 
-                return Task.CompletedTask;
+                    return Task.CompletedTask;
+                }
+                catch
+                {
+                    TheTrace.TraceWarning($"Coming OUT OF LOOPER for {name} DUE EXCEPTION. SHOULD NEVER HAPPEN");
+                    throw;
+                }
             };
         }
 
-        public static Func<CancellationToken, Task> ComposeLooper(this Func<Task> action, TimeSpan timeout)
+        public static Func<CancellationToken, Task> ComposeLooper(this Func<Task> action, TimeSpan timeout, string name)
         {
             return async (c) =>
             {
-                while (!c.IsCancellationRequested)
+                try
                 {
-                    if (!c.WaitHandle.WaitOne(timeout))
+                    while (!c.IsCancellationRequested)
                     {
-                        await action();
+                        if (!c.WaitHandle.WaitOne(timeout))
+                        {
+                            await action();
+                        }
+                        else
+                        {
+                            TheTrace.TraceInformation($"Received a signal so end is nigh - {name}");
+                        }
                     }
+                }
+                catch
+                {
+                    TheTrace.TraceWarning($"Coming OUT OF LOOPER for {name} DUE EXCEPTION. SHOULD NEVER HAPPEN");
+                    throw;
                 }
             };
         }

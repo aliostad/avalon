@@ -363,6 +363,8 @@ namespace Avalon.Raft.Core.Tests
         public async Task LeaderSendsSnapshotForAClientSoBehind()
         {
             _settings.MinSnapshottingIndexInterval = 10L;
+            _maqina.Setup(x => x.WriteSnapshotAsync(It.IsAny<Stream>()))
+                .Callback(async (Stream s) => s.Write(new byte[256], 0, 256)).Returns(Task.CompletedTask);
             var term = 1L;
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.Is<string>(s => s != "1"))).Returns(_mockPeer.Object);
@@ -386,13 +388,23 @@ namespace Avalon.Raft.Core.Tests
                 new AppendEntriesResponse(term, true)
             );
             
-            behindPeer.Setup(x => x.AppendEntriesAsync(It.IsAny<AppendEntriesRequest>())).ReturnsAsync(
-                new AppendEntriesResponse(term, false), TimeSpan.FromMilliseconds(50)
+            // unsuccessful response to append entry so that it is left behind
+            behindPeer.Setup(x => x.AppendEntriesAsync(It.Is<AppendEntriesRequest>(
+                req => req.Entries.Length > 0
+            ))).ReturnsAsync(
+                new AppendEntriesResponse(term, false)
+            );
+
+            // but success to heartbeat
+            behindPeer.Setup(x => x.AppendEntriesAsync(It.Is<AppendEntriesRequest>(
+                req => req.Entries.Length == 0
+            ))).ReturnsAsync(
+                new AppendEntriesResponse(term, true)
             );
 
             // should be called for installing snapshot
             behindPeer.Setup(x => x.InstallSnapshotAsync(It.Is<InstallSnapshotRequest>(req => 
-                req.CurrentTerm == term && req.LastIncludedIndex == 13
+                req.CurrentTerm == term && req.LastIncludedIndex == 14
             ))).ReturnsAsync(
                 new InstallSnapshotResponse() { CurrentTerm = term }
             );
@@ -450,6 +462,7 @@ namespace Avalon.Raft.Core.Tests
             Assert.Equal(count - 2, _server.LogPersister.LogOffset);
         }
 
+        private VolatileLeaderState _statun = new VolatileLeaderState();
 
         private byte[][] GetSomeRandomEntries()
         {

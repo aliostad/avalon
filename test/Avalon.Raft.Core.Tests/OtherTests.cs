@@ -23,7 +23,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var s = new VolatileLeaderState();
             foreach (var i in matchIndices)
-                s.MatchIndices[Guid.NewGuid()] = i;
+                s.SetMatchIndex(Guid.NewGuid(), i);
 
             Assert.Equal(majority, s.GetMajorityMatchIndex());
         }

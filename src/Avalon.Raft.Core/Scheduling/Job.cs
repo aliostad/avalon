@@ -64,7 +64,6 @@ namespace Avalon.Raft.Core.Scheduling
 
         public bool IsFinished { get; private set; }
 
-
         public Job(Func<CancellationToken, Task<T>> work, AsyncPolicy policy, Action<T> callback = null)
         {
             _work = work;
