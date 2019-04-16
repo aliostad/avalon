@@ -34,7 +34,7 @@ namespace Avalon.Raft.Core
             };
         }
 
-        public static Func<CancellationToken, Task> ComposeLooper(this Action action, TimeSpan timeout, string name)
+        private static Func<CancellationToken, Task> ComposeLooper(this Action action, TimeSpan timeout, string name)
         {
             return (c) =>
             {
@@ -62,7 +62,7 @@ namespace Avalon.Raft.Core
             };
         }
 
-        public static Func<CancellationToken, Task> ComposeLooper(this Func<Task> action, TimeSpan timeout, string name)
+        private static Func<CancellationToken, Task> ComposeLooper(this Func<Task> action, TimeSpan timeout, string name)
         {
             return async (c) =>
             {

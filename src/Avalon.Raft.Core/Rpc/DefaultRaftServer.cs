@@ -7,6 +7,7 @@ using System.Threading.Tasks;
 using Polly;
 using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
 
 namespace Avalon.Raft.Core.Rpc
 {
@@ -116,40 +117,46 @@ namespace Avalon.Raft.Core.Rpc
             _workers.Start();
 
             // LogCommit
-            Func<Task> logCommit = LogCommit;
+            Func<CancellationToken, Task> logCommit = LogCommit;
             _workers.Enqueue(Queues.LogCommit, 
-                new Job(logCommit.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2), Queues.LogCommit),
-                TheTrace.LogPolicy().RetryForeverAsync()));
+                new Job(logCommit,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // candidacy
-            Func<Task> candidacy = Candidacy;
+            Func<CancellationToken, Task> candidacy = Candidacy;
             _workers.Enqueue(Queues.Candidacy,
-                new Job(candidacy.ComposeLooper(_settings.CandidacyTimeout.Multiply(0.2), Queues.Candidacy),
-                TheTrace.LogPolicy().RetryForeverAsync()));
+                new Job(candidacy,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // receiving heartbeat
-            Func<Task> hbr = HeartBeatReceive;
+            Func<CancellationToken, Task> hbr = HeartBeatReceive;
             _workers.Enqueue(Queues.HeartBeatReceive,
-                new Job(hbr.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2), Queues.HeartBeatReceive),
-                TheTrace.LogPolicy().RetryForeverAsync()));
+                new Job(hbr,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // sending heartbeat
-            Func<Task> hbs = HeartBeatSend;
+            Func<CancellationToken, Task> hbs = HeartBeatSend;
             _workers.Enqueue(Queues.HeartBeatSend,
-                new Job(hbs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2), Queues.HeartBeatSend),
-                TheTrace.LogPolicy().RetryForeverAsync()));
+                new Job(hbs,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // Applying commands received from the clients
-            Func<Task> pcq = ProcessCommandsQueue;
+            Func<CancellationToken, Task> pcq = ProcessCommandsQueue;
             _workers.Enqueue(Queues.ApplyClientCommands,
-                new Job(pcq.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2), Queues.ApplyClientCommands),
-                TheTrace.LogPolicy().RetryForeverAsync()));
+                new Job(pcq,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // Applying commands received from the clients
-            Func<Task> cs = CreateSnapshot;
+            Func<CancellationToken, Task> cs = CreateSnapshot;
             _workers.Enqueue(Queues.CreateSnapshot,
-                new Job(cs.ComposeLooper(_settings.ElectionTimeoutMin.Multiply(0.2), Queues.CreateSnapshot),
-                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i*i*50))));
+                new Job(cs,
+                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i*i*50)),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             TheTrace.TraceInformation("Setup finished.");
         }
@@ -158,7 +165,7 @@ namespace Avalon.Raft.Core.Rpc
 
         #region Work Streams
 
-        private Task ProcessCommandsQueue()
+        private Task ProcessCommandsQueue(CancellationToken c)
         {
             var entries = new List<LogEntry>();
             StateMachineCommandRequest command;
@@ -178,7 +185,7 @@ namespace Avalon.Raft.Core.Rpc
             
             return Task.CompletedTask;
         }
-        private Task HeartBeatReceive()
+        private Task HeartBeatReceive(CancellationToken c)
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds + 1);
             var elapsed = _lastHeartbeat.Since().TotalMilliseconds;
@@ -191,7 +198,7 @@ namespace Avalon.Raft.Core.Rpc
             return Task.CompletedTask;
         }
 
-        private async Task HeartBeatSend()
+        private async Task HeartBeatSend(CancellationToken c)
         {
             if (_role != Role.Leader)
                 return;
@@ -237,7 +244,7 @@ namespace Avalon.Raft.Core.Rpc
             _lastHeartbeatSent.Set();
         }
 
-        private async Task Candidacy()
+        private async Task Candidacy(CancellationToken c)
         {
             var forMe = 1; // vote for yourself
             var againstMe = 0;
@@ -290,7 +297,7 @@ namespace Avalon.Raft.Core.Rpc
             }
         }
 
-        private async Task LogCommit()
+        private async Task LogCommit(CancellationToken c)
         {
             // IMPORTANTE!! SIEMPERE CREATE VARIABLES LOCALES
             var commitIndex = _volatileState.CommitIndex;
@@ -308,7 +315,7 @@ namespace Avalon.Raft.Core.Rpc
         }
 
 
-        private async Task CreateSnapshot()
+        private async Task CreateSnapshot(CancellationToken c)
         {
             if (_isSnapshotting)
                 _isSnapshotting = false; // previously crashed perhaps
@@ -339,9 +346,9 @@ namespace Avalon.Raft.Core.Rpc
             _isSnapshotting = false;          
         }
 
-        private Func<Task> PeerAppendLog(Peer peer)
+        private Func<CancellationToken, Task> PeerAppendLog(Peer peer)
         {
-            return () =>
+            return (CancellationToken c) =>
             {
                 long nextIndex;
                 long matchIndex;
@@ -724,8 +731,9 @@ namespace Avalon.Raft.Core.Rpc
                 var todo = PeerAppendLog(localP);
                 
                 _workers.Enqueue(q,
-                    new Job(todo.ComposeLooper(TimeSpan.FromMilliseconds(30), Queues.PeerAppendLog + p.Address), // the timeout is built into the job
-                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*50))));
+                    new Job(todo,
+                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*50)),
+                    TimeSpan.FromMilliseconds(30)));
             }
         }
 
