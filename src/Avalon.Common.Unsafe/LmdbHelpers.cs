@@ -68,24 +68,27 @@ namespace Avalon.Common
         {
             using (var c = db.OpenCursor(tx))
             {
-                var keydb = new DirectBuffer(BitConverter.GetBytes(key));
-                var valdb = new DirectBuffer(BitConverter.GetBytes(firstValue));
+                byte* keyptr = (byte*) Unsafe.AsPointer(ref key);
+                byte* valptr = (byte*) Unsafe.AsPointer(ref value);
+                byte* firstvalptr = (byte*) Unsafe.AsPointer(ref firstValue);
+                var keydb = new DirectBuffer(sizeof(long), keyptr);
+                var valdb = new DirectBuffer(sizeof(long), firstvalptr);
                 c.TryFindDup(Lookup.EQ, ref keydb, ref valdb);
 
                 while (c.Delete(false))
                 {
-                    try
-                    {
-                        if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent) || valdb.IsEmpty)
+                    //try
+                    //{
+                        if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetBothRange) || valdb.IsEmpty)
                             break; // empty now
-                    }
-                    catch (LMDBException e)
+                    /*}
+                      catch (LMDBException e)
                     {
                         if (e.Message.StartsWith("Invalid argument"))
                                 break; // empty database now - it is a bug will be fixed
                             else
                                 throw;
-                    }
+                    } */
 
                         var currentValue = valdb.ReadInt64(0);
                         if (currentValue == value)
