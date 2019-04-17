@@ -64,43 +64,37 @@ namespace Avalon.Common
         /// <param name="value">Value (or part of the value) to which the data will be deleted</param>
         /// <param name="firstValue">First value to position to the beginning of dupes. Even if first value is bigger it is OK.</param>
         /// <returns></returns>
-        public static unsafe bool DeleteUpToValue(this Transaction tx, Database db, Bufferable key, long value, long firstValue = 0L)
+        public static unsafe bool DeleteUpToValue(this Transaction tx, Database db, long key, long value, long firstValue = 0L)
         {
             using (var c = db.OpenCursor(tx))
             {
-                fixed (byte* keyPtr = &key.Buffer[0])
+                var keydb = new DirectBuffer(BitConverter.GetBytes(key));
+                var valdb = new DirectBuffer(BitConverter.GetBytes(firstValue));
+                c.TryFindDup(Lookup.EQ, ref keydb, ref valdb);
+
+                while (c.Delete(false))
                 {
-                    var keydb = new DirectBuffer(key.Buffer.Length, keyPtr);
-                    var ptr = Unsafe.AsPointer(ref firstValue);
-                    var valdb = new DirectBuffer(sizeof(long), (byte*) ptr);
-                    c.TryFindDup(Lookup.EQ, ref keydb, ref valdb);
-
-                    while (c.Delete(false))
+                    try
                     {
-                        try
-                        {
-                            c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent);
-                            if (valdb.IsEmpty)
-                                break;
-
-                        }
-                        catch (LMDBException e)
-                        {
-                            if (e.Message.StartsWith("Invalid argument"))
-                                break; // empty database now
+                        if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetCurrent) || valdb.IsEmpty)
+                            break; // empty now
+                    }
+                    catch (LMDBException e)
+                    {
+                        if (e.Message.StartsWith("Invalid argument"))
+                                break; // empty database now - it is a bug will be fixed
                             else
                                 throw;
-                        }
+                    }
 
                         var currentValue = valdb.ReadInt64(0);
                         if (currentValue == value)
                             break;
-                    }
 
-                    return true;
                 }
-            }
 
+                return true;
+            }
         }
     }
 }

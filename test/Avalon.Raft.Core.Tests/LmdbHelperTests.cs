@@ -126,7 +126,7 @@ namespace Avalon.Raft.Core.Tests
         [Fact]
         public void CanSaveAndReadDup()
         {
-            var key = 42;
+            var key = 42L;
             var value = Guid.NewGuid();
             var i = 1969L;
             using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 }))
