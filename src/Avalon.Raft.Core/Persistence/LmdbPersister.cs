@@ -219,7 +219,7 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public void WriteSnapshot(long lastIncludedIndex, long lastTerm, byte[] chunk, long offsetInFile, bool isFinal)
+        public void WriteLeaderSnapshot(long lastIncludedIndex, long lastTerm, byte[] chunk, long offsetInFile, bool isFinal)
         {
             var fileName = _snapMgr.GetTempFileNameForIndexAndTerm(lastIncludedIndex, lastTerm);
             Stream stream = null;
@@ -247,7 +247,6 @@ namespace Avalon.Raft.Core.Persistence
                 var newOffset = lastIncludedIndex + 1;
                 FinaliseSnapshot(lastIncludedIndex, lastTerm);
                 TruncateLogUpToIndex(newOffset);
-                
             }
         }
 

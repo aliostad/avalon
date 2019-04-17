@@ -33,5 +33,16 @@ namespace Avalon.Raft.Core.Persistence
         /// <param name="lastIndexIncluded">Index of the last log entry applied</param>
         /// <param name="LastTerm">Term of the last log entry applied</param>
         void FinaliseSnapshot(long lastIndexIncluded, long lastTerm);
+
+                /// <summary>
+        /// Write a snapshot chunk - coming from the leader
+        /// </summary>
+        /// <param name="lastIncludedIndex">Last included index in the whole snapshot</param>
+        /// <param name="lastTerm">Term of the last log entry</param>
+        /// <param name="chunk">chunk of the snapshot to be written</param>
+        /// <param name="offsetInFile">position of the data in the snapshot file</param>
+        /// <param name="isFinal">whether this is the last chunk</param>
+        void WriteLeaderSnapshot(long lastIncludedIndex, long lastTerm, byte[] chunk, long offsetInFile, bool isFinal);
+
     }
 }

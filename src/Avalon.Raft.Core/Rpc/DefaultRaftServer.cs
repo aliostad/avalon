@@ -595,18 +595,24 @@ namespace Avalon.Raft.Core.Rpc
         }
 
         /// <inheritdoc />
-        public Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
+        public async Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
             if (request.CurrentTerm > State.CurrentTerm)
                 BecomeFollower(request.CurrentTerm);
 
-            _logPersister.WriteSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
+            _snapshotOperator.WriteLeaderSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
+            
             if (request.IsDone)
             {
-                // TODO: rebuild state from snapshot
+                _snapshotOperator.FinaliseSnapshot(request.LastIncludedIndex, request.LastIncludedTerm);
+                _logPersister.ApplySnapshot(request.LastIncludedIndex + 1);
+                Snapshot ss;
+                if (!_snapshotOperator.TryGetLastSnapshot(out ss) || ss.LastIncludedIndex != request.LastIncludedIndex)
+                    throw new InvalidOperationException($"Where did this finalised snapshot with index {request.LastIncludedIndex} go??");
+                await _stateMachine.RebuildFromSnapshotAsync(ss);
             }
 
-            return Task.FromResult(new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm });
+            return new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm };
         }
 
         /// <inheritdoc />

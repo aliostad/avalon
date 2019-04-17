@@ -247,10 +247,10 @@ namespace Avalon.Raft.Core.Tests
             _persister.Append(new[] { l }, 5);
 
 
-            _persister.WriteSnapshot(4, term, new byte[] { 1 }, 0, false);
-            _persister.WriteSnapshot(4, term, new byte[] { 2 }, 1, false);
-            _persister.WriteSnapshot(4, term, new byte[] { 3 }, 2, false);
-            _persister.WriteSnapshot(4, term, new byte[] { 4 }, 3, true);
+            _persister.WriteLeaderSnapshot(4, term, new byte[] { 1 }, 0, false);
+            _persister.WriteLeaderSnapshot(4, term, new byte[] { 2 }, 1, false);
+            _persister.WriteLeaderSnapshot(4, term, new byte[] { 3 }, 2, false);
+            _persister.WriteLeaderSnapshot(4, term, new byte[] { 4 }, 3, true);
 
             Assert.Equal(4, _persister.LogOffset);
             Snapshot snap;
