@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+	<TargetFrameworks>netcoreapp2.0</TargetFrameworks>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Polly" Version="7.1.0" />
+    <PackageReference Include="Spreads.LMDB" Version="2019.0.402" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Avalon.Common.Unsafe\Avalon.Common.Unsafe.csproj" />
+    <ProjectReference Include="..\..\src\Avalon.Raft.Core\Avalon.Raft.Core.csproj" />
+  </ItemGroup>
+
+</Project>
