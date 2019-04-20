@@ -95,6 +95,10 @@ namespace Avalon.Raft.Core.Rpc
             _snapshotOperator = snapshotOperator;
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
+        }
+
+        public void Start()
+        {
             SetupPool();
         }
 

@@ -73,6 +73,7 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetPeers()).Returns(new[] { "1", "3", "5", "7" }.Select(s => new Peer(s, Guid.NewGuid())));
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new LazyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             Thread.Sleep(2000);
             Assert.Equal(Role.Candidate, _server.Role);
@@ -85,6 +86,7 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new FriendlyPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y=="7"))).Returns(new AngryPeer());
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             Thread.Sleep(1000);
             Assert.Equal(Role.Leader, _server.Role);
@@ -97,6 +99,7 @@ namespace Avalon.Raft.Core.Tests
             _manijer.Setup(x => x.GetProxy(It.IsAny<string>())).Returns(new BackStabberPeer());
             _manijer.Setup(x => x.GetProxy(It.Is<string>(y => y == "7"))).Returns(new FriendlyPeer());
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             TheTrace.TraceInformation("OK, now this is before wait...");
             Thread.Sleep(300);
@@ -113,6 +116,7 @@ namespace Avalon.Raft.Core.Tests
             var t = new CancellationTokenSource();
             var leaderId = Guid.NewGuid();
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             // to set the term to 1
             await _server.AppendEntriesAsync(new AppendEntriesRequest()
@@ -148,6 +152,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var leaderId = Guid.NewGuid();
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             // to set the term to 1
             var result = await _server.RequestVoteAsync(new RequestVoteRequest()
@@ -179,6 +184,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var leaderId = Guid.NewGuid();
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
             _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
@@ -202,9 +208,9 @@ namespace Avalon.Raft.Core.Tests
         {
             var leaderId = Guid.NewGuid();
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
-
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
             _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
+            _server.Start();
 
             Thread.Sleep(400);
             var result = await _server.RequestVoteAsync(new RequestVoteRequest()
@@ -233,6 +239,7 @@ namespace Avalon.Raft.Core.Tests
         {
             var leaderId = Guid.NewGuid();
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.Start();
 
             // has to be done - otherwise it becomes a candidate
             _server.LastHeartBeat = new AlwaysRecentTimestamp();
@@ -276,6 +283,7 @@ namespace Avalon.Raft.Core.Tests
 
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
             _server.LastHeartBeat = new AlwaysOldTimestamp();
+            _server.Start();
 
             Thread.Sleep(3000);
             
@@ -300,8 +308,8 @@ namespace Avalon.Raft.Core.Tests
             );
 
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
-
             _server.LastHeartBeat = new AlwaysOldTimestamp();
+            _server.Start();
 
             Thread.Sleep(2000); // must be a leader by now            
             Assert.Equal(Role.Leader, _server.Role);
@@ -343,8 +351,8 @@ namespace Avalon.Raft.Core.Tests
             );
             
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
-
             _server.LastHeartBeat = new AlwaysOldTimestamp();
+            _server.Start();
 
             Thread.Sleep(1000); // must be a leader by now            
             Assert.Equal(Role.Leader, _server.Role);
@@ -410,8 +418,8 @@ namespace Avalon.Raft.Core.Tests
             );
 
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
-
             _server.LastHeartBeat = new AlwaysOldTimestamp();
+            _server.Start();
 
             Thread.Sleep(1000); // must be a leader by now            
             Assert.Equal(Role.Leader, _server.Role);
@@ -432,6 +440,10 @@ namespace Avalon.Raft.Core.Tests
             var leaderId = Guid.NewGuid();
             _settings.MinSnapshottingIndexInterval = 10L;
             _server = new DefaultRaftServer(_sister, _sister, _sister, _maqina.Object, _manijer.Object, _settings);
+            _server.LastHeartBeat = new AlwaysRecentTimestamp();
+            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
+            _server.Start();
+            
             var term = 1;
             var count = 15L;
             var entry = new byte[122];
@@ -449,9 +461,6 @@ namespace Avalon.Raft.Core.Tests
                     PreviousLogTerm = term
                 });
             }
-
-            _server.LastHeartBeat = new AlwaysRecentTimestamp();
-            _server.LastHeartBeatSent = new AlwaysRecentTimestamp();
 
             Thread.Sleep(1000); // must be a leader by now            
             Assert.Equal(Role.Follower, _server.Role);
