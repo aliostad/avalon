@@ -77,22 +77,12 @@ namespace Avalon.Common
 
                 while (c.Delete(false))
                 {
-                    //try
-                    //{
-                        if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetBothRange) || valdb.IsEmpty)
-                            break; // empty now
-                    /*}
-                      catch (LMDBException e)
-                    {
-                        if (e.Message.StartsWith("Invalid argument"))
-                                break; // empty database now - it is a bug will be fixed
-                            else
-                                throw;
-                    } */
+                    if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetBothRange) || valdb.IsEmpty)
+                        break; // empty now
 
-                        var currentValue = valdb.ReadInt64(0);
-                        if (currentValue == value)
-                            break;
+                    var currentValue = valdb.ReadInt64(0);
+                    if (currentValue == value)
+                        break;
 
                 }
 

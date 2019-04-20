@@ -1,13 +1,15 @@
 <Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
-	<TargetFrameworks>netcoreapp2.0</TargetFrameworks>
+	<TargetFramework>netcoreapp2.0</TargetFramework>
     <LangVersion>7.3</LangVersion>
+    <OutputType>Exe</OutputType>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Polly" Version="7.1.0" />
     <PackageReference Include="Spreads.LMDB" Version="2019.0.402" />
+    <PackageReference Include="Colorful.Console" Version="1.2.9" />
   </ItemGroup>
 
   <ItemGroup>

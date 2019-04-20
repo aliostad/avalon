@@ -308,7 +308,9 @@ namespace Avalon.Raft.Core.Rpc
             {
                 // TODO: ADD BATCHING LATER
                 await _stateMachine.ApplyAsync(
-                    _logPersister.GetEntries(lastApplied + 1, (int)(commitIndex - lastApplied)));
+                    _logPersister.GetEntries(lastApplied + 1, (int)(commitIndex - lastApplied))
+                        .Select(x => x.Body).ToArray()
+                    );
 
                 _volatileState.LastApplied = commitIndex;
             }

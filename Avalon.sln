@@ -13,6 +13,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Avalon.Raft.Core.Tests", "t
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalon.Common.Unsafe", "src\Avalon.Common.Unsafe\Avalon.Common.Unsafe.csproj", "{77CB13D3-1A00-4750-960F-640AFD321576}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Avalon.Raft.Core.Integration", "test\Avalon.Raft.Core.Integration\Avalon.Raft.Core.Integration.csproj", "{C17830A3-CD67-4BFE-B290-D158FABD89F9}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -31,6 +33,10 @@ Global
 		{77CB13D3-1A00-4750-960F-640AFD321576}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{77CB13D3-1A00-4750-960F-640AFD321576}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{77CB13D3-1A00-4750-960F-640AFD321576}.Release|Any CPU.Build.0 = Release|Any CPU
+		{C17830A3-CD67-4BFE-B290-D158FABD89F9}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{C17830A3-CD67-4BFE-B290-D158FABD89F9}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{C17830A3-CD67-4BFE-B290-D158FABD89F9}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{C17830A3-CD67-4BFE-B290-D158FABD89F9}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -39,6 +45,7 @@ Global
 		{BA46F615-8C37-401C-891F-3EBBF3B87205} = {3E037445-D8AB-4BB7-9B9D-C699D8ECA33C}
 		{6B8C7157-A040-4508-938C-227AF9A44BAE} = {7EAC24AB-427C-4CBE-B62C-FA0D00C2026B}
 		{77CB13D3-1A00-4750-960F-640AFD321576} = {3E037445-D8AB-4BB7-9B9D-C699D8ECA33C}
+		{C17830A3-CD67-4BFE-B290-D158FABD89F9} = {7EAC24AB-427C-4CBE-B62C-FA0D00C2026B}
 	EndGlobalSection
 	GlobalSection(ExtensibilityGlobals) = postSolution
 		SolutionGuid = {D5A471C1-89D1-4C51-99C6-A5544F2C78A0}

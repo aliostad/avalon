@@ -5,7 +5,7 @@ namespace Avalon.Raft.Core
 {
     public interface IStateMachine
     {
-        Task ApplyAsync(LogEntry[] entries);
+        Task ApplyAsync(byte[][] commands);
 
         Task WriteSnapshotAsync(Stream stream);
 
