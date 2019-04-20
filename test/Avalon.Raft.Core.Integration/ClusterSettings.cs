@@ -1,6 +1,8 @@
+using Avalon.Raft.Core.Rpc;
+
 namespace Avalon.Raft.Core.Integration
 {
-    public class ClusterSettings
+    public class ClusterSettings : RaftServerSettings
     {
         public string DataRootFolder { get; set; }
 

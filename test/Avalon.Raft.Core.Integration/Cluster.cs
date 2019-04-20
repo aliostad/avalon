@@ -7,20 +7,25 @@ using Avalon.Raft.Core.Persistence;
 
 namespace Avalon.Raft.Core.Integration
 {
-    public class Cluster
+    public class Cluster : IDisposable
     {
         private string[] _addresses = Enumerable.Range(1, 5).Select(x => x.ToString()).ToArray(); // 1 to 5
+        private readonly ClusterSettings _settings;
 
         private Dictionary<string, string> _folders = new Dictionary<string, string>();
-        private Dictionary<string, IRaftServer> _nodes = new Dictionary<string, IRaftServer>();
+        private Dictionary<string, DefaultRaftServer> _nodes = new Dictionary<string, DefaultRaftServer>();
         private Dictionary<string, Peer> _peers = new Dictionary<string, Peer>();
 
-        private readonly ClusterSettings _settings;
+
+        internal Dictionary<string, DefaultRaftServer> Nodes => _nodes;
+        internal Dictionary<string, Peer> Peers => _peers;
+
         public Cluster(ClusterSettings settings)
         {
             _settings = settings;
 
             SetupFolders();
+            SetupPeers();
             SetupNodes();
         }
 
@@ -34,7 +39,7 @@ namespace Avalon.Raft.Core.Integration
         {
             if (Directory.Exists(_settings.DataRootFolder) && _settings.ClearOldData)
             {
-                Directory.Delete(_settings.DataRootFolder);
+                Directory.Delete(_settings.DataRootFolder, true);
             }
 
             SafeCreateFolder(_settings.DataRootFolder);
@@ -46,10 +51,18 @@ namespace Avalon.Raft.Core.Integration
             }
         }
 
+        public void Start()
+        {
+            foreach (var node in _nodes.Values)
+                node.Start();
+        }
+
         private void SetupPeers()
         {
             foreach (var address in _addresses)
                 _peers.Add(address, new Peer(address, Guid.NewGuid()));
+
+            _peers.Values.ChooseShortNames();
         }
         private void SetupNodes()
         {
@@ -59,15 +72,21 @@ namespace Avalon.Raft.Core.Integration
                 var peers = _peers.Where(x => x.Key != address).Select(x => x.Value).ToArray();
                 var peerManager = new PeerManager(peers, _nodes);
                 var node = new DefaultRaftServer(lp, lp, lp,
-                    new SimpleDictionaryStateMachine(), peerManager, new RaftServerSettings());
+                    new SimpleDictionaryStateMachine(), peerManager, _settings);
                 _nodes.Add(address, node);
             }
+        }
+
+        public void Dispose()
+        {
+            foreach (var node in _nodes.Values)
+                node.Dispose();
         }
 
         class PeerManager : IPeerManager
         {
             private IEnumerable<Peer> _peers;
-            private Dictionary<string, IRaftServer> _proxies;
+            private Dictionary<string, DefaultRaftServer> _proxies;
 
             public IEnumerable<Peer> GetPeers()
             {
@@ -79,7 +98,7 @@ namespace Avalon.Raft.Core.Integration
                 return _proxies[address];
             }
 
-            public PeerManager(Peer[] peers, Dictionary<string, IRaftServer> proxies)
+            public PeerManager(Peer[] peers, Dictionary<string, DefaultRaftServer> proxies)
             {
                 _peers = peers;
                 _proxies = proxies;
