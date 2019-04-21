@@ -72,7 +72,7 @@ namespace Avalon.Raft.Core.Integration
                 var peers = _peers.Where(x => x.Key != address).Select(x => x.Value).ToArray();
                 var peerManager = new PeerManager(peers, _nodes);
                 var node = new DefaultRaftServer(lp, lp, lp,
-                    new SimpleDictionaryStateMachine(), peerManager, _settings);
+                    new SimpleDictionaryStateMachine(), peerManager, _settings, _peers[address]);
                 _nodes.Add(address, node);
             }
         }

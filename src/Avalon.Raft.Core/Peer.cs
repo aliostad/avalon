@@ -13,7 +13,7 @@ namespace Avalon.Raft.Core
         {
             Address = address;
             Id = id;
-            ShortName = Id.ToString("N"); // not really short
+            ShortName = Id.ToString("N").ToUpper().Substring(0, 6); // not really short
         }
 
         /// <summary>

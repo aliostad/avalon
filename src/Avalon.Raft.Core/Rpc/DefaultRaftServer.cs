@@ -36,6 +36,7 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly ISnapshotOperator _snapshotOperator;
         protected readonly IPeerManager _peerManager;
         protected readonly RaftServerSettings _settings;
+        protected readonly Peer _meAsAPeer;
         protected int _candidateVotes;
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
@@ -44,6 +45,7 @@ namespace Avalon.Raft.Core.Rpc
         private BlockingCollection<StateMachineCommandRequest> _commands = new BlockingCollection<StateMachineCommandRequest>();
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
             
+        
         #region For Testability
 
         internal ISnapshotOperator SnapshotOperator => _snapshotOperator;
@@ -87,7 +89,8 @@ namespace Avalon.Raft.Core.Rpc
             ISnapshotOperator snapshotOperator, 
             IStateMachine stateMachine,
             IPeerManager peerManager, 
-            RaftServerSettings settings)
+            RaftServerSettings settings,
+            Peer meAsAPeer = null)
         {
             _logPersister = logPersister;
             _peerManager = peerManager;
@@ -95,6 +98,7 @@ namespace Avalon.Raft.Core.Rpc
             _snapshotOperator = snapshotOperator;
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
+            _meAsAPeer = meAsAPeer ?? new Peer("NoAddress", State.Id);
         }
 
         public void Start()
@@ -184,7 +188,7 @@ namespace Avalon.Raft.Core.Rpc
             if (entries.Any())
             {
                 _logPersister.Append(entries.ToArray());
-                TheTrace.TraceInformation($"His Majesty appended {entries.Count} entries.");
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] His Majesty appended {entries.Count} entries.");
             }
             
             return Task.CompletedTask;
@@ -195,7 +199,7 @@ namespace Avalon.Raft.Core.Rpc
             var elapsed = _lastHeartbeat.Since().TotalMilliseconds;
             if (_role == Role.Follower && elapsed > millis)
             {
-                TheTrace.TraceInformation("Timeout for heartbeat: {0}ms. Time for candidacy!", elapsed);
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Timeout for heartbeat: {elapsed}ms. Time for candidacy!");
                 BecomeCandidate();
             }
 
@@ -233,7 +237,7 @@ namespace Avalon.Raft.Core.Rpc
                 if (r.Outcome == OutcomeType.Successful)
                 {
                     if (!r.Result.IsSuccess)
-                        TheTrace.TraceWarning("Got this reason for unsuccessful AppendEntriesAsync from a peer: {0}", r.Result.Reason);
+                        TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] Got this reason for unsuccessful AppendEntriesAsync from a peer: {r.Result.Reason}");
 
                     // NOTE: We do NOT change leadership if they send higher term, since they could be candidates whom will not become leaders
                     // we actually do not need to do anything with the result other than logging it
@@ -243,7 +247,7 @@ namespace Avalon.Raft.Core.Rpc
             }
 
             if (maxTerm > State.CurrentTerm)
-                TheTrace.TraceWarning("Revolution brewing. Terms as high as {} (vs my {}) were seen.", maxTerm, currentTerm);
+                TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] Revolution brewing. Terms as high as {maxTerm} (vs my {currentTerm}) were seen.");
 
             _lastHeartbeatSent.Set();
         }
@@ -287,16 +291,16 @@ namespace Avalon.Raft.Core.Rpc
                 if (againstMe >= concensus)
                 {
                     BecomeFollower(maxTerm);
-                    TheTrace.TraceInformation("Result of the candidacy for term {0}. I got rejected with {1} votes :/", State.CurrentTerm, againstMe);
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Result of the candidacy for term {State.CurrentTerm}. I got rejected with {againstMe} votes :/");
                 }
                 else if (forMe >= concensus)
                 {
                     BecomeLeader();
-                    TheTrace.TraceInformation("Result of the candidacy for term {0}. I got elected with {1} votes! :)", State.CurrentTerm, forMe);
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Result of the candidacy for term {State.CurrentTerm}. I got elected with {forMe} votes! :)");
                 }
                 else
                 {
-                    TheTrace.TraceInformation("Result of the candidacy for term {0}. Non-conclusive with {1} for me and {2} against me.", State.CurrentTerm, forMe, againstMe);
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Result of the candidacy for term {State.CurrentTerm}. Non-conclusive with {forMe} for me and {againstMe} against me.");
                 }
             }
         }
@@ -338,17 +342,17 @@ namespace Avalon.Raft.Core.Rpc
                 return; // no work
             
             _isSnapshotting = true;
-            TheTrace.TraceInformation($"Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
             var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex, term);
             await _stateMachine.WriteSnapshotAsync(stream);
             stream.Close();
-            TheTrace.TraceInformation($"Successfully created snapshot for safeIndex {safeIndex}");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created snapshot for safeIndex {safeIndex}");
             _snapshotOperator.FinaliseSnapshot(safeIndex, term); // this changes LogOffset
-            TheTrace.TraceInformation($"Successfully finalised snapshot for safeIndex {safeIndex}");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully finalised snapshot for safeIndex {safeIndex}");
             _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
-            TheTrace.TraceInformation($"Successfully applied snapshot for safeIndex {safeIndex}");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully applied snapshot for safeIndex {safeIndex}");
             _snapshotOperator.CleanSnapshots();
-            TheTrace.TraceInformation($"Successfully created and applied snapshot for SafeIndex: {safeIndex}");  
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");  
             _isSnapshotting = false;          
         }
 
@@ -365,19 +369,18 @@ namespace Avalon.Raft.Core.Rpc
 
                 if (!hasMatch)
                 {
-                    TheTrace.TraceWarning("Could not find peer with id {} and address {} in matchIndex dic.", peer.Id, peer.Address);
+                    TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] Could not find peer with id {peer.Id} and address {peer.Address} in matchIndex dic.");
                     return Task.CompletedTask;
                 }
 
                 if (!hasNext)
                 {
-                    TheTrace.TraceWarning("Could not find peer with id {} and address {} in nextIndex dic.", peer.Id, peer.Address);
+                    TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] Could not find peer with id {peer.Id} and address {peer.Address} in nextIndex dic.");
                     return Task.CompletedTask;
                 }
 
                 if (nextIndex > myLastIndex)
                 {
-                    //TheTrace.TraceInformation($"[Peer {peer.Address}] nextIndex is {nextIndex} and myLastIndex is {myLastIndex} hence nothing to do");
                     return Task.CompletedTask; // nothing to do
                 }
 
@@ -388,12 +391,12 @@ namespace Avalon.Raft.Core.Rpc
 
                 if (nextIndex > _logPersister.LogOffset)
                 {
-                    TheTrace.TraceInformation($"Intending to do SendLog for peer {peer.Address}.");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendLog for peer {peer.Address}.");
                     return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }
                 else
                 {
-                    TheTrace.TraceInformation($"Intending to do SendSnapshot for peer {peer.Address}.");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendSnapshot for peer {peer.Address}.");
                     return SendSnapshot(proxy, policy, peer, nextIndex, matchIndex);
                 }
             };
@@ -426,7 +429,7 @@ namespace Avalon.Raft.Core.Rpc
                 var total = 0;
                 var length = fs.Length;
                 var buffer = new byte[_settings.MaxSnapshotChunkSentInBytes];
-                TheTrace.TraceInformation($"Snapshot copy file size is {length}. Location is {fileName} and copy of {ss.FullName}.");
+                TheTrace.TraceInformation($"S[{_meAsAPeer.ShortName}] napshot copy file size is {length}. Location is {fileName} and copy of {ss.FullName}.");
                 while(total < length)
                 {
                     var count = fs.Read(buffer, 0, buffer.Length);
@@ -441,11 +444,11 @@ namespace Avalon.Raft.Core.Rpc
                         Offset = start
                     });
                     
-                    TheTrace.TraceInformation($"Sent snapshot for peer {peer.Address} with {count} bytes totalling {total}.");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Sent snapshot for peer {peer.Address} with {count} bytes totalling {total}.");
                     
                     start += count;
                     if (result.CurrentTerm != term)
-                        TheTrace.TraceWarning($"I am sending snapshot but this peer {peer.Address} has term {result.CurrentTerm} vs my started term {term} and current term {State.CurrentTerm}.");
+                        TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] I am sending snapshot but this peer {peer.Address} has term {result.CurrentTerm} vs my started term {term} and current term {State.CurrentTerm}.");
                 }
             }
 
@@ -484,7 +487,7 @@ namespace Avalon.Raft.Core.Rpc
                     // If successful: update nextIndex and matchIndex for follower(§5.3)"
                     _volatileLeaderState.SetMatchIndex(peer.Id, nextIndex + count - 1);
                     _volatileLeaderState.SetNextIndex(peer.Id, nextIndex + count);
-                    TheTrace.TraceInformation($"Successfully transferred {count} entries from index {nextIndex} to peer {peer.Address}");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully transferred {count} entries from index {nextIndex} to peer {peer.Address}");
                     UpdateCommitIndex();
                 }
                 else
@@ -500,7 +503,7 @@ namespace Avalon.Raft.Core.Rpc
                             nextIndex - diff;
 
                         _volatileLeaderState.SetNextIndex(peer.Id, nextIndex);
-                        TheTrace.TraceInformation($"Updated (decremented) next index for peer {peer.Address} to {nextIndex}");
+                        TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Updated (decremented) next index for peer {peer.Address} to {nextIndex}");
                     }
                 }
             }
@@ -545,14 +548,14 @@ namespace Avalon.Raft.Core.Rpc
             // Reply false if term < currentTerm (§5.1)
             if (request.CurrentTerm < State.CurrentTerm)
             {
-                message = $"Leader's term is behind ({request.CurrentTerm} vs {State.CurrentTerm}).";
+                message = $"[{_meAsAPeer.ShortName}] Leader's term is behind ({request.CurrentTerm} vs {State.CurrentTerm}).";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.TermInconsistency, message));
             }
 
             if (request.PreviousLogIndex > _logPersister.LastIndex)
             {
-                message = $"Position for last log entry is {_logPersister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
+                message = $"[{_meAsAPeer.ShortName}] Position for last log entry is {_logPersister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
             }
@@ -569,14 +572,14 @@ namespace Avalon.Raft.Core.Rpc
                 var entry = _logPersister.GetEntries(request.PreviousLogIndex, 1).First();
                 if (entry.Term != request.CurrentTerm)
                 {
-                    message = $"Position at {request.PreviousLogIndex} has term {entry.Term} but according to leader {request.LeaderId} it must be {request.PreviousLogTerm}";
+                    message = $"[{_meAsAPeer.ShortName}] Position at {request.PreviousLogIndex} has term {entry.Term} but according to leader {request.LeaderId} it must be {request.PreviousLogTerm}";
                     TheTrace.TraceWarning(message);
                     return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
                 }
 
                 // If an existing entry conflicts with a new one(same index but different terms), delete the existing entry and all that follow it(§5.3)
                 _logPersister.DeleteEntries(request.PreviousLogIndex + 1);
-                TheTrace.TraceWarning("Stripping the log from index {0}. Last index was {1}", request.PreviousLogIndex + 1, _logPersister.LastIndex);
+                TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] Stripping the log from index {request.PreviousLogIndex + 1}. Last index was {_logPersister.LastIndex}");
             }
 
             var entries = request.Entries.Select(x => new LogEntry()
@@ -586,7 +589,7 @@ namespace Avalon.Raft.Core.Rpc
             }).ToArray();
 
             // Append any new entries not already in the log
-            TheTrace.TraceInformation($"Current last index is {_logPersister.LastIndex}. About to append {entries.Length} entries at {request.PreviousLogIndex + 1}");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Current last index is {_logPersister.LastIndex}. About to append {entries.Length} entries at {request.PreviousLogIndex + 1}");
             _logPersister.Append(entries, request.PreviousLogIndex + 1);
 
             //If leaderCommit > commitIndex, set commitIndex = min(leaderCommit, index of last new entry)
@@ -595,7 +598,7 @@ namespace Avalon.Raft.Core.Rpc
                 _volatileState.CommitIndex = Math.Min(request.LeaderCommitIndex, _logPersister.LastIndex);
             }
 
-            message = $"Appended {request.Entries.Length} entries at position {request.PreviousLogIndex + 1}";
+            message = $"[{_meAsAPeer.ShortName}] Appended {request.Entries.Length} entries at position {request.PreviousLogIndex + 1}";
             TheTrace.TraceInformation(message);
             return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true, ReasonType.None, message));
         }
@@ -643,6 +646,7 @@ namespace Avalon.Raft.Core.Rpc
                 // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
                 _lastHeartbeat.Set();
 
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Voting for {request.CandidateId}");
                 return Task.FromResult(new RequestVoteResponse()
                 {
                     CurrentTerm = State.CurrentTerm,
@@ -664,7 +668,7 @@ namespace Avalon.Raft.Core.Rpc
             if (Role == Role.Leader)
             {
                 _commands.TryAdd(command);
-                TheTrace.TraceInformation($"Got a command from a client.");
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Got a command from a client.");
                 return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
             }
             else if (_settings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
@@ -713,7 +717,7 @@ namespace Avalon.Raft.Core.Rpc
             var peers = _peerManager.GetPeers().ToArray();
             foreach(var peer in peers)
             {
-                TheTrace.TraceInformation($"setting up indices for peer {peer.Address}");
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] setting up indices for peer {peer.Address}");
                 _volatileLeaderState.SetNextIndex(peer.Id, _logPersister.LastIndex + 1);
                 _volatileLeaderState.SetMatchIndex(peer.Id, -1L);
             }
@@ -739,7 +743,7 @@ namespace Avalon.Raft.Core.Rpc
             {
                 var localP = p;
                 var q = Queues.PeerAppendLog + localP.Address;
-                TheTrace.TraceInformation($"setting up peer append log for queue {q}");
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] setting up peer append log for queue {q}");
                 var todo = PeerAppendLog(localP);
                 
                 _workers.Enqueue(q,
@@ -759,11 +763,11 @@ namespace Avalon.Raft.Core.Rpc
 
         public void Dispose()
         {
-            TheTrace.TraceInformation("Disposing server.");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Disposing server.");
             _workers.Stop();
-            TheTrace.TraceInformation("Disposing server. Workers stopped.");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Disposing server. Workers stopped.");
             _logPersister.Dispose();
-            TheTrace.TraceInformation("Disposing server. Log Persister stopped.");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Disposing server. Log Persister stopped.");
         }
     }
 }
