@@ -44,8 +44,8 @@ namespace Avalon.Raft.Core.Rpc
         private bool _isSnapshotting = false;
         private BlockingCollection<StateMachineCommandRequest> _commands = new BlockingCollection<StateMachineCommandRequest>();
         public event EventHandler<RoleChangedEventArgs> RoleChanged;
-            
-        
+
+
         #region For Testability
 
         internal ISnapshotOperator SnapshotOperator => _snapshotOperator;
@@ -84,11 +84,11 @@ namespace Avalon.Raft.Core.Rpc
         #region .ctore and setup
 
         public DefaultRaftServer(
-            ILogPersister logPersister, 
+            ILogPersister logPersister,
             IStatePersister statePersister,
-            ISnapshotOperator snapshotOperator, 
+            ISnapshotOperator snapshotOperator,
             IStateMachine stateMachine,
-            IPeerManager peerManager, 
+            IPeerManager peerManager,
             RaftServerSettings settings,
             Peer meAsAPeer = null)
         {
@@ -126,7 +126,7 @@ namespace Avalon.Raft.Core.Rpc
 
             // LogCommit
             Func<CancellationToken, Task> logCommit = LogCommit;
-            _workers.Enqueue(Queues.LogCommit, 
+            _workers.Enqueue(Queues.LogCommit,
                 new Job(logCommit,
                 TheTrace.LogPolicy().RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
@@ -163,7 +163,7 @@ namespace Avalon.Raft.Core.Rpc
             Func<CancellationToken, Task> cs = CreateSnapshot;
             _workers.Enqueue(Queues.CreateSnapshot,
                 new Job(cs,
-                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i*i*50)),
+                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             TheTrace.TraceInformation("Setup finished.");
@@ -177,9 +177,10 @@ namespace Avalon.Raft.Core.Rpc
         {
             var entries = new List<LogEntry>();
             StateMachineCommandRequest command;
-            while(_commands.TryTake(out command)) // we can set up a maximum but really we should accept all
+            while (_commands.TryTake(out command)) // we can set up a maximum but really we should accept all
             {
-                entries.Add(new LogEntry(){
+                entries.Add(new LogEntry()
+                {
                     Body = command.Command,
                     Term = State.CurrentTerm
                 });
@@ -190,7 +191,7 @@ namespace Avalon.Raft.Core.Rpc
                 _logPersister.Append(entries.ToArray());
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] His Majesty appended {entries.Count} entries.");
             }
-            
+
             return Task.CompletedTask;
         }
         private Task HeartBeatReceive(CancellationToken c)
@@ -262,7 +263,7 @@ namespace Avalon.Raft.Core.Rpc
                 var peers = _peerManager.GetPeers().ToArray();
                 var concensus = (peers.Length / 2) + 1;
                 var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
-                var retry = TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*30));
+                var retry = TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 30));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
                 var request = new RequestVoteRequest()
                 {
@@ -340,7 +341,7 @@ namespace Avalon.Raft.Core.Rpc
 
             if (safeIndex - _logPersister.LogOffset < _settings.MinSnapshottingIndexInterval)
                 return; // no work
-            
+
             _isSnapshotting = true;
             TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
             var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex, term);
@@ -352,8 +353,8 @@ namespace Avalon.Raft.Core.Rpc
             _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
             TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully applied snapshot for safeIndex {safeIndex}");
             _snapshotOperator.CleanSnapshots();
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");  
-            _isSnapshotting = false;          
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");
+            _isSnapshotting = false;
         }
 
         private Func<CancellationToken, Task> PeerAppendLog(Peer peer)
@@ -384,7 +385,7 @@ namespace Avalon.Raft.Core.Rpc
                     return Task.CompletedTask; // nothing to do
                 }
 
-                var count = (int) Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex + 1 - nextIndex);
+                var count = (int)Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex + 1 - nextIndex);
                 var proxy = _peerManager.GetProxy(peer.Address);
                 var retry = TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(20));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
@@ -406,7 +407,7 @@ namespace Avalon.Raft.Core.Rpc
             IRaftServer proxy,
             AsyncPolicy policy,
             Peer peer,
-            long nextIndex, 
+            long nextIndex,
             long matchIndex)
         {
             var logOffset = LogPersister.LogOffset;
@@ -414,27 +415,28 @@ namespace Avalon.Raft.Core.Rpc
             Snapshot ss;
             if (!SnapshotOperator.TryGetLastSnapshot(out ss))
                 throw new InvalidProgramException($"WE DO NOT HAVE A SNAPSHOT for client {peer.Address} whose nextIndex is {nextIndex} yet our LogOffset is {logOffset}");
-            
+
             if (ss.LastIncludedIndex + 1 < nextIndex)
                 throw new InvalidProgramException($"WE DO NOT HAVE A <<PROPER>> SNAPSHOT for client {peer.Address} whose nextIndex is {nextIndex} yet our LogOffset is {logOffset}. Snapshot was have ({ss.FullName}) is short {ss.LastIncludedIndex}");
 
             // make a copy since it might be cleaned up or opened by another thread for another client
             var fileName = Path.GetTempFileName();
             File.Copy(ss.FullName, fileName, true);
-            
 
-            using(var fs = new FileStream(fileName, FileMode.Open))
+
+            using (var fs = new FileStream(fileName, FileMode.Open))
             {
                 var start = 0;
                 var total = 0;
                 var length = fs.Length;
                 var buffer = new byte[_settings.MaxSnapshotChunkSentInBytes];
                 TheTrace.TraceInformation($"S[{_meAsAPeer.ShortName}] napshot copy file size is {length}. Location is {fileName} and copy of {ss.FullName}.");
-                while(total < length)
+                while (total < length)
                 {
                     var count = fs.Read(buffer, 0, buffer.Length);
-                    total += count;                    
-                    var result = await proxy.InstallSnapshotAsync(new InstallSnapshotRequest(){
+                    total += count;
+                    var result = await proxy.InstallSnapshotAsync(new InstallSnapshotRequest()
+                    {
                         CurrentTerm = term,
                         Data = count == buffer.Length ? buffer : buffer.Take(count).ToArray(),
                         LastIncludedIndex = ss.LastIncludedIndex,
@@ -443,9 +445,9 @@ namespace Avalon.Raft.Core.Rpc
                         LeaderId = State.Id,
                         Offset = start
                     });
-                    
+
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Sent snapshot for peer {peer.Address} with {count} bytes totalling {total}.");
-                    
+
                     start += count;
                     if (result.CurrentTerm != term)
                         TheTrace.TraceWarning($"[{_meAsAPeer.ShortName}] I am sending snapshot but this peer {peer.Address} has term {result.CurrentTerm} vs my started term {term} and current term {State.CurrentTerm}.");
@@ -461,14 +463,14 @@ namespace Avalon.Raft.Core.Rpc
             IRaftServer proxy,
             AsyncPolicy policy,
             Peer peer,
-            long nextIndex, 
+            long nextIndex,
             long matchIndex,
             int count)
         {
             var previousIndexTerm = -1L;
             if (nextIndex > 0)
                 previousIndexTerm = _logPersister.GetEntries(nextIndex - 1, 1).First().Term;
-            
+
             var request = new AppendEntriesRequest()
             {
                 CurrentTerm = State.CurrentTerm,
@@ -524,7 +526,7 @@ namespace Avalon.Raft.Core.Rpc
 
             var majorityIndex = _volatileLeaderState.GetMajorityMatchIndex();
             var index = _volatileState.CommitIndex + 1; // next
-            while(index <= _logPersister.LastIndex && index <= majorityIndex && _logPersister.GetEntries(index, 1).First().Term == State.CurrentTerm)
+            while (index <= _logPersister.LastIndex && index <= majorityIndex && _logPersister.GetEntries(index, 1).First().Term == State.CurrentTerm)
             {
                 index++;
             }
@@ -541,9 +543,11 @@ namespace Avalon.Raft.Core.Rpc
         {
             _lastHeartbeat.Set();
             string message = null;
-
-            if (request.CurrentTerm > State.CurrentTerm)
-                BecomeFollower(request.CurrentTerm);
+            lock(State)
+            {
+                if (request.CurrentTerm > State.CurrentTerm)
+                    BecomeFollower(request.CurrentTerm);
+            }
 
             // Reply false if term < currentTerm (§5.1)
             if (request.CurrentTerm < State.CurrentTerm)
@@ -606,11 +610,14 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public async Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
-            if (request.CurrentTerm > State.CurrentTerm)
-                BecomeFollower(request.CurrentTerm);
+            lock (State)
+            {
+                if (request.CurrentTerm > State.CurrentTerm)
+                    BecomeFollower(request.CurrentTerm);
+            }
 
             _snapshotOperator.WriteLeaderSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
-            
+
             if (request.IsDone)
             {
                 _snapshotOperator.FinaliseSnapshot(request.LastIncludedIndex, request.LastIncludedTerm);
@@ -627,39 +634,42 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
         {
-            if (request.CurrentTerm > State.CurrentTerm)
-                BecomeFollower(request.CurrentTerm);
+            lock (State)
+            {
+                if (request.CurrentTerm > State.CurrentTerm)
+                    BecomeFollower(request.CurrentTerm);
 
-            // Reply false if term < currentTerm
-            if (State.CurrentTerm > request.CurrentTerm)
+                // Reply false if term < currentTerm
+                if (State.CurrentTerm > request.CurrentTerm)
+                    return Task.FromResult(new RequestVoteResponse()
+                    {
+                        CurrentTerm = State.CurrentTerm,
+                        VoteGranted = false
+                    });
+
+                // If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote(§5.2, §5.4)
+                if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
+                {
+                    State.LastVotedForId = request.CandidateId;
+
+                    // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
+                    _lastHeartbeat.Set();
+
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Voting for {request.CandidateId}");
+                    return Task.FromResult(new RequestVoteResponse()
+                    {
+                        CurrentTerm = State.CurrentTerm,
+                        VoteGranted = true
+                    });
+                }
+
+                // assume the rest we send back no
                 return Task.FromResult(new RequestVoteResponse()
                 {
                     CurrentTerm = State.CurrentTerm,
                     VoteGranted = false
                 });
-
-            // If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote(§5.2, §5.4)
-            if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
-            {
-                State.LastVotedForId = request.CandidateId;
-
-                // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
-                _lastHeartbeat.Set();
-
-                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Voting for {request.CandidateId}");
-                return Task.FromResult(new RequestVoteResponse()
-                {
-                    CurrentTerm = State.CurrentTerm,
-                    VoteGranted = true
-                });
             }
-
-            // assume the rest we send back no
-            return Task.FromResult(new RequestVoteResponse()
-            {
-                CurrentTerm = State.CurrentTerm,
-                VoteGranted = false
-            });
         }
 
         /// <inheritdoc />
@@ -669,7 +679,7 @@ namespace Avalon.Raft.Core.Rpc
             {
                 _commands.TryAdd(command);
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Got a command from a client.");
-                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.Accepted });
+                return Task.FromResult(new StateMachineCommandResponse() { Outcome = CommandOutcome.Accepted });
             }
             else if (_settings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
             {
@@ -678,15 +688,15 @@ namespace Avalon.Raft.Core.Rpc
             }
             else if (_settings.RedirectStateMachineCommands && _leaderAddress != null)
             {
-                return Task.FromResult(new StateMachineCommandResponse() 
+                return Task.FromResult(new StateMachineCommandResponse()
                 {
-                    Outcome = CommandOutcome.Redirect, 
-                    DirectTo = _leaderAddress 
+                    Outcome = CommandOutcome.Redirect,
+                    DirectTo = _leaderAddress
                 });
             }
             else
             {
-                return Task.FromResult(new StateMachineCommandResponse() {Outcome = CommandOutcome.ServiceUnavailable });
+                return Task.FromResult(new StateMachineCommandResponse() { Outcome = CommandOutcome.ServiceUnavailable });
             }
         }
 
@@ -706,6 +716,7 @@ namespace Avalon.Raft.Core.Rpc
         {
             DestroyPeerAppendLogJobs();
             _lastHeartbeat.Set(); // important not to become candidate again at least for another timeout
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] About to set term from {State.CurrentTerm} to {term}");
             State.CurrentTerm = term;
             OnRoleChanged(_role = Role.Follower);
         }
@@ -715,7 +726,7 @@ namespace Avalon.Raft.Core.Rpc
             _leaderAddress = null;
             _volatileLeaderState = new VolatileLeaderState();
             var peers = _peerManager.GetPeers().ToArray();
-            foreach(var peer in peers)
+            foreach (var peer in peers)
             {
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] setting up indices for peer {peer.Address}");
                 _volatileLeaderState.SetNextIndex(peer.Id, _logPersister.LastIndex + 1);
@@ -736,26 +747,26 @@ namespace Avalon.Raft.Core.Rpc
 
         private void SetupPeerAppendLogJobs(IEnumerable<Peer> peers)
         {
-            foreach(var w in _workers.GetWorkers(Queues.PeerAppendLog))
+            foreach (var w in _workers.GetWorkers(Queues.PeerAppendLog))
                 w.Start();
 
-            foreach(var p in peers)
+            foreach (var p in peers)
             {
                 var localP = p;
                 var q = Queues.PeerAppendLog + localP.Address;
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] setting up peer append log for queue {q}");
                 var todo = PeerAppendLog(localP);
-                
+
                 _workers.Enqueue(q,
                     new Job(todo,
-                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i*i*50)),
+                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                     TimeSpan.FromMilliseconds(30)));
             }
         }
 
         private void DestroyPeerAppendLogJobs()
         {
-            foreach(var w in _workers.GetWorkers(Queues.PeerAppendLog))
+            foreach (var w in _workers.GetWorkers(Queues.PeerAppendLog))
                 w.Stop();
         }
 

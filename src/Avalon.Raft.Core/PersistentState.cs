@@ -9,9 +9,9 @@ namespace Avalon.Raft.Core
     {
         const int BufferLength = 40;
 
-        public PersistentState()
+        public PersistentState(Guid? seedId = null)
         {
-            Id = Guid.NewGuid();
+            Id = seedId ?? Guid.NewGuid();
             CurrentTerm = 0L;
         }
 

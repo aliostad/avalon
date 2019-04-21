@@ -68,7 +68,7 @@ namespace Avalon.Raft.Core.Integration
         {
             foreach (var address in _addresses)
             {
-                var lp = new LmdbPersister(_folders[address]);
+                var lp = new LmdbPersister(_folders[address], seedId: _peers[address].Id);
                 var peers = _peers.Where(x => x.Key != address).Select(x => x.Value).ToArray();
                 var peerManager = new PeerManager(peers, _nodes);
                 var node = new DefaultRaftServer(lp, lp, lp,

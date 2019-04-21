@@ -42,7 +42,7 @@ namespace Avalon.Raft.Core.Persistence
         /// </summary>
         /// <param name="directory">directory where the data and snapshots kept</param>
         /// <param name="mapSize">Default is 100 MB</param>
-        public LmdbPersister(string directory, long mapSize = 100 * 1024 * 1024)
+        public LmdbPersister(string directory, long mapSize = 100 * 1024 * 1024, Guid? seedId = null)
         {
             _directory = directory;
             if (!Directory.Exists(directory))
@@ -56,7 +56,7 @@ namespace Avalon.Raft.Core.Persistence
             _logDb = _env.OpenDatabase(Databases.Log, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 });
             _stateDb = _env.OpenDatabase(Databases.State, new DatabaseConfig(DbFlags.Create));
 
-            LoadState();
+            LoadState(seedId);
         }
 
         private void LoadLastTermAndIndex()
@@ -85,7 +85,7 @@ namespace Avalon.Raft.Core.Persistence
             }
         }
 
-        private void LoadState()
+        private void LoadState(Guid? seedId = null)
         {
             using (var tx = _env.BeginReadOnlyTransaction())
             {
@@ -97,7 +97,7 @@ namespace Avalon.Raft.Core.Persistence
                     LogOffset = ss.LastIncludedIndex;
                 
                 // state
-                _state = new PersistentState();
+                _state = new PersistentState(seedId);
                 Bufferable val;
                 if (tx.TryGet(_stateDb, StateDbKeys.Id, out val))
                 {
