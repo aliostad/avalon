@@ -113,6 +113,8 @@ namespace Avalon.Raft.Core.Persistence
                     }
                 }
             }
+
+            TheTrace.TraceInformation($"Seed Id was {seedId} and now {_state.Id}");
         }
 
         /// <inheritdocs/>

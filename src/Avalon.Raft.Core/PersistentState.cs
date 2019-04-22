@@ -12,18 +12,17 @@ namespace Avalon.Raft.Core
         public PersistentState(Guid? seedId = null)
         {
             Id = seedId ?? Guid.NewGuid();
-            CurrentTerm = 0L;
         }
 
-        public Guid Id { get; set; }
+        public virtual Guid Id { get; set; }
 
-        public virtual long CurrentTerm { get; set; }
+        public virtual long CurrentTerm { get; set; } = 0L;
 
         public virtual Guid? LastVotedForId { get; set; }
 
         public virtual void IncrementTerm()
         {
-            CurrentTerm += 1;
+            CurrentTerm++;
             LastVotedForId = null;
         }
     }

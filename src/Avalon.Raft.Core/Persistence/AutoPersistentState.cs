@@ -7,20 +7,24 @@ namespace Avalon.Raft.Core.Persistence
     public class AutoPersistentState : PersistentState
     {
         private readonly IStatePersister _persister;
-        private bool _initialLocading = true;
 
         public AutoPersistentState(IStatePersister persister)
         {
+            if (persister == null)
+                throw new ArgumentNullException("persister");
+                
             _persister = persister;
             var state = persister.Load();
-
-            _initialLocading = false;
+            base.Id = state.Id;
+            base.CurrentTerm = state.CurrentTerm;
+            base.LastVotedForId = state.LastVotedForId;
         }
 
         public override void IncrementTerm()
         {
             base.IncrementTerm();
             _persister.SaveTerm(this.CurrentTerm);
+            _persister.SaveLastVotedFor(this.LastVotedForId);
         }
 
         public override long CurrentTerm
@@ -29,8 +33,7 @@ namespace Avalon.Raft.Core.Persistence
             set
             {
                 base.CurrentTerm = value;
-                if (!_initialLocading)
-                    _persister.SaveTerm(value);
+                _persister.SaveTerm(value);
             }
         }
 
@@ -40,8 +43,7 @@ namespace Avalon.Raft.Core.Persistence
             set
             {
                 base.LastVotedForId = value;
-                if (!_initialLocading)
-                    _persister.SaveLastVotedFor(value);
+                _persister.SaveLastVotedFor(value);
             }
         }
     }

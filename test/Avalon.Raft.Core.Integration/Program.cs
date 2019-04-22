@@ -34,12 +34,12 @@ namespace Avalon.Raft.Core.Integration
         private static void Setup()
         {
             var rootPath = "_data";
-            _cluster = new Cluster(new ClusterSettings() {
-                DataRootFolder = rootPath
-            });
-
+            if (!Directory.Exists(rootPath))
+                Directory.CreateDirectory(rootPath);
+                
             var logFileName = Path.Combine(rootPath, "log.txt");
             _log = new StreamWriter(logFileName);
+
             TheTrace.Tracer = (level, s, data) => {
                 var message = "";
                 if (data.Length == 0)
@@ -51,6 +51,10 @@ namespace Avalon.Raft.Core.Integration
                     _log.WriteLine($"{DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff")} {message}");
                 }
             };
+
+            _cluster = new Cluster(new ClusterSettings() {
+                DataRootFolder = rootPath
+            });
 
             _cluster.Start();
         }

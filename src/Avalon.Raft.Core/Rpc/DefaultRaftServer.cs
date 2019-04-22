@@ -166,7 +166,7 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
-            TheTrace.TraceInformation("Setup finished.");
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Setup finished.");
         }
 
         #endregion
@@ -256,6 +256,7 @@ namespace Avalon.Raft.Core.Rpc
         private async Task Candidacy(CancellationToken c)
         {
             var forMe = 1; // vote for yourself
+            State.LastVotedForId = State.Id; // OK voted for yourself hence need to set this
             var againstMe = 0;
 
             while (_role == Role.Candidate)
@@ -633,7 +634,11 @@ namespace Avalon.Raft.Core.Rpc
 
         /// <inheritdoc />
         public Task<RequestVoteResponse> RequestVoteAsync(RequestVoteRequest request)
-        {
+        {            
+            var peers = _peerManager.GetPeers();
+            var peer = peers.Where(x => x.Id == request.CandidateId).FirstOrDefault();
+            var peerName = peer?.ShortName ?? request.CandidateId.ToString(); 
+            
             lock (State)
             {
                 if (request.CurrentTerm > State.CurrentTerm)
@@ -641,11 +646,15 @@ namespace Avalon.Raft.Core.Rpc
 
                 // Reply false if term < currentTerm
                 if (State.CurrentTerm > request.CurrentTerm)
+                {
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Rejecting vote of {peerName} due to backward term");
                     return Task.FromResult(new RequestVoteResponse()
-                    {
-                        CurrentTerm = State.CurrentTerm,
-                        VoteGranted = false
-                    });
+                        {
+                            CurrentTerm = State.CurrentTerm,
+                            VoteGranted = false
+                        });
+                }
+                    
 
                 // If votedFor is null or candidateId, and candidate’s log is at least as up-to-date as receiver’s log, grant vote(§5.2, §5.4)
                 if (!State.LastVotedForId.HasValue && _logPersister.LastIndex <= request.LastLogIndex)
@@ -655,13 +664,15 @@ namespace Avalon.Raft.Core.Rpc
                     // If election timeout elapses without receiving AppendEntries RPC from current leader OR GRANTING VOTE TO CANDIDATE: convert to candidate
                     _lastHeartbeat.Set();
 
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Voting for {request.CandidateId}");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Voting for {peerName} for term {request.CurrentTerm}");
                     return Task.FromResult(new RequestVoteResponse()
                     {
                         CurrentTerm = State.CurrentTerm,
                         VoteGranted = true
                     });
                 }
+
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Rejecting vote of {peerName} for term {request.CurrentTerm} as it did not fulfil");
 
                 // assume the rest we send back no
                 return Task.FromResult(new RequestVoteResponse()

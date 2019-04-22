@@ -39,7 +39,8 @@ namespace Avalon.Raft.Core.Integration
         {
             if (Directory.Exists(_settings.DataRootFolder) && _settings.ClearOldData)
             {
-                Directory.Delete(_settings.DataRootFolder, true);
+                foreach (var d in Directory.GetDirectories(_settings.DataRootFolder))
+                    Directory.Delete(d, true);                    
             }
 
             SafeCreateFolder(_settings.DataRootFolder);
@@ -68,8 +69,15 @@ namespace Avalon.Raft.Core.Integration
         {
             foreach (var address in _addresses)
             {
+                TheTrace.TraceInformation($"Setting up {address} ({_peers[address].ShortName}) {_peers[address].Id}");
                 var lp = new LmdbPersister(_folders[address], seedId: _peers[address].Id);
                 var peers = _peers.Where(x => x.Key != address).Select(x => x.Value).ToArray();
+                foreach (var p in peers)
+                {
+                    TheTrace.TraceInformation($"{p.Address} - ({p.ShortName}) {p.Id}");
+                }
+
+                TheTrace.TraceInformation("___________________________________________________________________________");
                 var peerManager = new PeerManager(peers, _nodes);
                 var node = new DefaultRaftServer(lp, lp, lp,
                     new SimpleDictionaryStateMachine(), peerManager, _settings, _peers[address]);
