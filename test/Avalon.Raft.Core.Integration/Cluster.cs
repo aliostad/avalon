@@ -4,13 +4,15 @@ using System.Linq;
 using System.IO;
 using Avalon.Raft.Core.Rpc;
 using Avalon.Raft.Core.Persistence;
+using System.Threading.Tasks;
 
 namespace Avalon.Raft.Core.Integration
 {
-    public class Cluster : IDisposable
+    public class Cluster : IDisposable, IStateMachineServer
     {
         private string[] _addresses = Enumerable.Range(1, 5).Select(x => x.ToString()).ToArray(); // 1 to 5
         private readonly ClusterSettings _settings;
+        private Random _r = new Random();
 
         private Dictionary<string, string> _folders = new Dictionary<string, string>();
         private Dictionary<string, DefaultRaftServer> _nodes = new Dictionary<string, DefaultRaftServer>();
@@ -85,10 +87,22 @@ namespace Avalon.Raft.Core.Integration
             }
         }
 
+        public bool IsSplitBrain()
+        {
+            return _nodes.Values.Where(x => x.Role == Role.Leader).Count() > 1;
+        }
+
         public void Dispose()
         {
             foreach (var node in _nodes.Values)
                 node.Dispose();
+        }
+
+        public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
+        {
+            var nodes = _nodes.Values.ToArray();
+            var node = nodes[_r.Next(0, nodes.Length)];
+            return node.ApplyCommandAsync(command);
         }
 
         class PeerManager : IPeerManager

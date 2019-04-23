@@ -51,6 +51,8 @@ namespace Avalon.Raft.Core.Rpc
 
         internal ILogPersister LogPersister => _logPersister;
 
+        internal VolatileState VolatileState => _volatileState;
+
         #endregion
 
         public Role Role => _role;
@@ -549,17 +551,17 @@ namespace Avalon.Raft.Core.Rpc
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.TermInconsistency, message));
             }
 
+            if (request.Entries == null || request.Entries.Length == 0) // it is a heartbeat, set the leader address
+            {
+                _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).FirstOrDefault()?.Address;
+                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
+            }
+
             if (request.PreviousLogIndex > _logPersister.LastIndex)
             {
                 message = $"[{_meAsAPeer.ShortName}] Position for last log entry is {_logPersister.LastIndex} but got entries starting at {request.PreviousLogIndex}";
                 TheTrace.TraceWarning(message);
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, false, ReasonType.LogInconsistency, message));
-            }
-
-            if (request.Entries == null || request.Entries.Length == 0) // it is a heartbeat, set the leader address
-            {
-                _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).FirstOrDefault()?.Address;
-                return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
             }
 
             if (request.PreviousLogIndex < _logPersister.LastIndex)
