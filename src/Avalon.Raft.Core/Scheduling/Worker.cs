@@ -48,8 +48,15 @@ namespace Avalon.Raft.Core.Scheduling
             }
 
             _cancel.Cancel();
-            if (!_th.Join(50))
-                _th.Abort();
+            try
+            {
+                if (!_th.Join(50))
+                    _th.Abort();
+            }
+            catch
+            {
+                // thread abort can raise errors
+            }
 
             _q = new BlockingCollection<IJob>();
             IsRunning = false;

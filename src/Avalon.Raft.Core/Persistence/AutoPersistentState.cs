@@ -23,8 +23,6 @@ namespace Avalon.Raft.Core.Persistence
         public override void IncrementTerm()
         {
             base.IncrementTerm();
-            _persister.SaveTerm(this.CurrentTerm);
-            _persister.SaveLastVotedFor(this.LastVotedForId);
         }
 
         public override long CurrentTerm

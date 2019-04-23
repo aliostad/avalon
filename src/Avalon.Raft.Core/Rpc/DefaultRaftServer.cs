@@ -17,9 +17,8 @@ namespace Avalon.Raft.Core.Rpc
         {
             public const string PeerAppendLog = "Peer-AppendLog-"; // leaders
             public const string LogCommit = "LogCommit";
-            public const string HeartBeatReceive = "HeartBeatReceive";
+            public const string HeartBeatReceiveAndCandidacy = "HeartBeatReceiveAndCandidacy";
             public const string HeartBeatSend = "HeartBeatSend"; // leaders
-            public const string Candidacy = "Candidacy";
             public const string ApplyClientCommands = "ApplyClientCommands"; // leaders
             public const string CreateSnapshot = "CreateSnapshot"; // leaders
         }
@@ -115,8 +114,7 @@ namespace Avalon.Raft.Core.Rpc
             }
 
             names.Add(Queues.LogCommit);
-            names.Add(Queues.Candidacy);
-            names.Add(Queues.HeartBeatReceive);
+            names.Add(Queues.HeartBeatReceiveAndCandidacy);
             names.Add(Queues.HeartBeatSend);
             names.Add(Queues.ApplyClientCommands);
             names.Add(Queues.CreateSnapshot);
@@ -131,16 +129,9 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.LogPolicy().RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
-            // candidacy
-            Func<CancellationToken, Task> candidacy = Candidacy;
-            _workers.Enqueue(Queues.Candidacy,
-                new Job(candidacy,
-                TheTrace.LogPolicy().RetryForeverAsync(),
-                _settings.ElectionTimeoutMin.Multiply(0.2)));
-
             // receiving heartbeat
             Func<CancellationToken, Task> hbr = HeartBeatReceive;
-            _workers.Enqueue(Queues.HeartBeatReceive,
+            _workers.Enqueue(Queues.HeartBeatReceiveAndCandidacy,
                 new Job(hbr,
                 TheTrace.LogPolicy().RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
@@ -202,9 +193,10 @@ namespace Avalon.Raft.Core.Rpc
             {
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Timeout for heartbeat: {elapsed}ms. Time for candidacy!");
                 BecomeCandidate();
+                return Candidacy(c);
             }
-
-            return Task.CompletedTask;
+            else
+                return Task.CompletedTask;
         }
 
         private async Task HeartBeatSend(CancellationToken c)
@@ -255,12 +247,11 @@ namespace Avalon.Raft.Core.Rpc
 
         private async Task Candidacy(CancellationToken c)
         {
-            var forMe = 1; // vote for yourself
-            State.LastVotedForId = State.Id; // OK voted for yourself hence need to set this
-            var againstMe = 0;
-
             while (_role == Role.Candidate)
             {
+                var forMe = 1; // vote for yourself
+                var againstMe = 0;
+
                 var peers = _peerManager.GetPeers().ToArray();
                 var concensus = (peers.Length / 2) + 1;
                 var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
@@ -292,13 +283,13 @@ namespace Avalon.Raft.Core.Rpc
 
                 if (againstMe >= concensus)
                 {
-                    BecomeFollower(maxTerm);
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Result of the candidacy for term {State.CurrentTerm}. I got rejected with {againstMe} votes :/");
+                    BecomeFollower(maxTerm);
                 }
                 else if (forMe >= concensus)
                 {
-                    BecomeLeader();
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Result of the candidacy for term {State.CurrentTerm}. I got elected with {forMe} votes! :)");
+                    BecomeLeader();
                 }
                 else
                 {
@@ -718,13 +709,13 @@ namespace Avalon.Raft.Core.Rpc
 
         protected void OnRoleChanged(Role role)
         {
-            State.LastVotedForId = null;
             _commands = new BlockingCollection<StateMachineCommandRequest>(); // reset commands
             RoleChanged?.Invoke(this, new RoleChangedEventArgs(role));
         }
 
         private void BecomeFollower(long term)
         {
+            State.LastVotedForId = null;
             DestroyPeerAppendLogJobs();
             _lastHeartbeat.Set(); // important not to become candidate again at least for another timeout
             TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] About to set term from {State.CurrentTerm} to {term}");
@@ -735,6 +726,7 @@ namespace Avalon.Raft.Core.Rpc
         private void BecomeLeader()
         {
             _leaderAddress = null;
+            State.LastVotedForId = State.Id;
             _volatileLeaderState = new VolatileLeaderState();
             var peers = _peerManager.GetPeers().ToArray();
             foreach (var peer in peers)
@@ -750,10 +742,13 @@ namespace Avalon.Raft.Core.Rpc
 
         private void BecomeCandidate()
         {
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] BecomeCandidate start");
+            State.IncrementTerm();
+            State.LastVotedForId = State.Id;
             _leaderAddress = null;
             DestroyPeerAppendLogJobs();
-            State.IncrementTerm();
             OnRoleChanged(_role = Role.Candidate);
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] BecomeCandidate end");
         }
 
         private void SetupPeerAppendLogJobs(IEnumerable<Peer> peers)

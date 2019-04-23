@@ -48,13 +48,11 @@ namespace Avalon.Raft.Core
 
         public void SetNextIndex(Guid id, long value)
         {
-            TheTrace.TraceInformation($"Setting next index for id {id} to {value} in");
             NextIndices[id] = value;
         }
 
         public void SetMatchIndex(Guid id, long value)
         {
-            TheTrace.TraceInformation($"Setting match index for id {id} to {value}");
             MatchIndices[id] = value;
         }
 
