@@ -682,7 +682,6 @@ namespace Avalon.Raft.Core.Rpc
             if (Role == Role.Leader)
             {
                 _commands.TryAdd(command);
-                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Got a command from a client.");
                 return Task.FromResult(new StateMachineCommandResponse() { Outcome = CommandOutcome.Accepted });
             }
             else if (_settings.ExecuteStateMachineCommandsOnClientBehalf && _leaderAddress != null)
