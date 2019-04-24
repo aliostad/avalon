@@ -53,7 +53,7 @@ namespace Avalon.Raft.Core.Tests
         public void CanLoadInANewPlace()
         {
             Assert.Equal(-1L, _persister.LastIndex);
-            Assert.Equal(-1L, _persister.LogOffset);
+            Assert.Equal(0L, _persister.LogOffset);
         }
 
         [Fact]
@@ -70,7 +70,7 @@ namespace Avalon.Raft.Core.Tests
             _persister.Append(new[] { l }, 2);
 
             Assert.Equal(2L, _persister.LastIndex);
-            Assert.Equal(-1L, _persister.LogOffset);
+            Assert.Equal(0L, _persister.LogOffset);
         }
 
         [Fact]
@@ -85,7 +85,7 @@ namespace Avalon.Raft.Core.Tests
             _persister.Append(new[] { l, l, l, l }, 0);
 
             Assert.Equal(3L, _persister.LastIndex);
-            Assert.Equal(-1L, _persister.LogOffset);
+            Assert.Equal(0L, _persister.LogOffset);
         }
 
         [Fact]
@@ -221,7 +221,7 @@ namespace Avalon.Raft.Core.Tests
             stream.Write(new byte[1024], 0, 1024);
             stream.Close();
             _persister.FinaliseSnapshot(lastIncludedIndex, term);
-            Assert.Equal(lastIncludedIndex, _persister.LogOffset);
+            Assert.Equal(lastIncludedIndex + 1, _persister.LogOffset);
             Snapshot snap = null;
             Assert.True(_persister.TryGetLastSnapshot(out snap));
             Assert.Equal(lastIncludedIndex, snap.LastIncludedIndex);
@@ -252,7 +252,7 @@ namespace Avalon.Raft.Core.Tests
             _persister.WriteLeaderSnapshot(4, term, new byte[] { 3 }, 2, false);
             _persister.WriteLeaderSnapshot(4, term, new byte[] { 4 }, 3, true);
 
-            Assert.Equal(4, _persister.LogOffset);
+            Assert.Equal(5, _persister.LogOffset);
             Snapshot snap;
             Assert.True(_persister.TryGetLastSnapshot(out snap));
             Assert.Equal(4, snap.LastIncludedIndex);

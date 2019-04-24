@@ -118,7 +118,16 @@ namespace Avalon.Raft.Core.Integration
                 var peer = _cluster.Peers[address];
                 var server = _cluster.Nodes[address];
                 var message =
-                $"{address} ({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}";
+                $"{address} ({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}\t";
+                if (server.Role == Role.Leader)
+                {
+                    foreach (var kv in server.VolatileLeaderState.NextIndices)
+                    {
+                        var shortName = _cluster.Peers.Values.Where(x => x.Id == kv.Key).Single().ShortName;
+                        message += $"{shortName}={kv.Value}|";
+                    }
+                }
+
                 Console.WriteLine(message);
             }
         }

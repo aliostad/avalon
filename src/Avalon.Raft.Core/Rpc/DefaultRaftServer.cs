@@ -53,6 +53,8 @@ namespace Avalon.Raft.Core.Rpc
 
         internal VolatileState VolatileState => _volatileState;
 
+        internal VolatileLeaderState VolatileLeaderState => _volatileLeaderState;
+
         #endregion
 
         public Role Role => _role;
@@ -327,7 +329,7 @@ namespace Avalon.Raft.Core.Rpc
 
             var commitIndex = _volatileState.CommitIndex;
             var term = State.CurrentTerm;
-            var safeIndex = commitIndex;
+            var safeIndex = _volatileState.LastApplied; // last applied is behind LogCommit and logcommit behind NextIndex(s)
 
             // NOTE: Here used to be a code looking at the minimum LastIndex and set SafeIndex to 
             // min(thatValue, commitIndex) if this was a Leader for the benefit of those 
@@ -384,9 +386,9 @@ namespace Avalon.Raft.Core.Rpc
                 var retry = TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(20));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
 
-                if (nextIndex > _logPersister.LogOffset)
+                if (nextIndex >= _logPersister.LogOffset)
                 {
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendLog for peer {peer.Address}.");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendLog for peer {peer.Address} with nextIndex {nextIndex} and count {count}.");
                     return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }
                 else
@@ -483,7 +485,7 @@ namespace Avalon.Raft.Core.Rpc
                     // If successful: update nextIndex and matchIndex for follower(§5.3)"
                     _volatileLeaderState.SetMatchIndex(peer.Id, nextIndex + count - 1);
                     _volatileLeaderState.SetNextIndex(peer.Id, nextIndex + count);
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully transferred {count} entries from index {nextIndex} to peer {peer.Address}");
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully transferred {count} entries from index {nextIndex} to peer {peer.Address} - Next Index is {_volatileLeaderState.NextIndices[peer.Id]}");
                     UpdateCommitIndex();
                 }
                 else

@@ -11,6 +11,13 @@ namespace Avalon.Raft.Core.Persistence
 {
     /// <summary>
     /// Implements various persistance requirements using LMDB (and files for snapshot)
+    /// 
+    /// This is the LogOffset, LastIncludedIndex
+    /// snapshot => || 0 | 1 | 2 | 3 ||
+    /// and logs => || 4 | 5 | 6 | 7 | 8 | ...
+    ///     LastIncludedIndex   -> 3
+    ///     LogOffset           -> 4
+    /// 
     /// </summary>
     public class LmdbPersister : ILogPersister, IStatePersister, ISnapshotOperator
     {
@@ -94,7 +101,7 @@ namespace Avalon.Raft.Core.Persistence
                 // snapshot
                 Snapshot ss;
                 if (TryGetLastSnapshot(out ss))
-                    LogOffset = ss.LastIncludedIndex;
+                    LogOffset = ss.LastIncludedIndex + 1;
                 
                 // state
                 _state = new PersistentState(seedId);
@@ -118,7 +125,7 @@ namespace Avalon.Raft.Core.Persistence
         }
 
         /// <inheritdocs/>
-        public long LogOffset { get; private set; } = -1;
+        public long LogOffset { get; private set; } = 0;
 
         /// <inheritdocs/>
         public long LastIndex { get; private set; } = -1;
@@ -191,7 +198,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public LogEntry[] GetEntries(long index, int count)
         {
-            if (index <= LogOffset)
+            if (index < LogOffset)
                 throw new EntriesNotAvailableAnymoreException(index, LogOffset);
 
             if (index + count - 1 > LastIndex)
@@ -322,8 +329,8 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public Stream GetNextSnapshotStream(long lastIndexIncluded, long lastTerm)
         {
-            if (lastIndexIncluded <= LogOffset)
-                throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is less or equal to LogOffset of {LogOffset}");
+            if (lastIndexIncluded < LogOffset)
+                throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is less than LogOffset of {LogOffset}");
 
             if (lastIndexIncluded > LastIndex)
                 throw new InvalidOperationException($"lastIndexIncluded of {lastIndexIncluded} is greater than LastIndex of {LastIndex}");
@@ -337,7 +344,7 @@ namespace Avalon.Raft.Core.Persistence
             File.Move(
                 _snapMgr.GetTempFileNameForIndexAndTerm(lastIndexIncluded, lastTerm), 
                 _snapMgr.GetFinalFileNameForIndexAndTerm(lastIndexIncluded, lastTerm));
-            this.LogOffset = lastIndexIncluded; // this is it! if server goes down, it will find LogOffset from file names
+            this.LogOffset = lastIndexIncluded + 1; // this is it! if server goes down, it will find LogOffset from file names
         }
 
         /// <inheritdocs/>
@@ -365,7 +372,7 @@ namespace Avalon.Raft.Core.Persistence
         public void ApplySnapshot(long newFirstIndex)
         {
             // this MUST be called after snapshot is finalised hence it checks if they are the same
-            if (newFirstIndex - 1 != LogOffset)
+            if (newFirstIndex != LogOffset)
                 throw new InvalidOperationException($"Expecting newFirstIndex to be as LogOffset+1 ({LogOffset}+1) but was {newFirstIndex}");
             TruncateLogUpToIndex(newFirstIndex);
         }

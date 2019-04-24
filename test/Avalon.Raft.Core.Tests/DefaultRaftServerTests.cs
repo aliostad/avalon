@@ -468,7 +468,7 @@ namespace Avalon.Raft.Core.Tests
             Assert.True(_server.SnapshotOperator.TryGetLastSnapshot(out ss));
             Assert.Equal(count - 2, ss.LastIncludedIndex); // last index is 14 and PreviousLogIndex is set to i-1 => 13
             Assert.Equal(term, ss.LastIncludedTerm);
-            Assert.Equal(count - 2, _server.LogPersister.LogOffset);
+            Assert.Equal(count - 1, _server.LogPersister.LogOffset);
         }
 
         private VolatileLeaderState _statun = new VolatileLeaderState();
