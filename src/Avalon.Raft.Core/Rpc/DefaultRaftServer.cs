@@ -19,7 +19,7 @@ namespace Avalon.Raft.Core.Rpc
             public const string LogCommit = "LogCommit";
             public const string HeartBeatReceiveAndCandidacy = "HeartBeatReceiveAndCandidacy";
             public const string HeartBeatSend = "HeartBeatSend"; // leaders
-            public const string ApplyClientCommands = "ApplyClientCommands"; // leaders
+            public const string ProcessCommandQueue = "ProcessCommandQueue"; // leaders
             public const string CreateSnapshot = "CreateSnapshot"; // leaders
         }
 
@@ -54,6 +54,8 @@ namespace Avalon.Raft.Core.Rpc
         internal VolatileState VolatileState => _volatileState;
 
         internal VolatileLeaderState VolatileLeaderState => _volatileLeaderState;
+
+        internal BlockingCollection<StateMachineCommandRequest> Commands => _commands;
 
         #endregion
 
@@ -120,7 +122,7 @@ namespace Avalon.Raft.Core.Rpc
             names.Add(Queues.LogCommit);
             names.Add(Queues.HeartBeatReceiveAndCandidacy);
             names.Add(Queues.HeartBeatSend);
-            names.Add(Queues.ApplyClientCommands);
+            names.Add(Queues.ProcessCommandQueue);
             names.Add(Queues.CreateSnapshot);
 
             _workers = new WorkerPool(names.ToArray());
@@ -148,13 +150,6 @@ namespace Avalon.Raft.Core.Rpc
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // Applying commands received from the clients
-            Func<CancellationToken, Task> pcq = ProcessCommandsQueue;
-            _workers.Enqueue(Queues.ApplyClientCommands,
-                new Job(pcq,
-                TheTrace.LogPolicy().RetryForeverAsync(),
-                _settings.ElectionTimeoutMin.Multiply(0.2)));
-
-            // Applying commands received from the clients
             Func<CancellationToken, Task> cs = CreateSnapshot;
             _workers.Enqueue(Queues.CreateSnapshot,
                 new Job(cs,
@@ -170,10 +165,19 @@ namespace Avalon.Raft.Core.Rpc
 
         private Task ProcessCommandsQueue(CancellationToken c)
         {
+            if (_isSnapshotting)
+                return Task.CompletedTask;
+
+            if (Role == Role.Leader)
+                TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] ProcessCommandsQueue with {_commands.Count} items.");
+
             var entries = new List<LogEntry>();
             StateMachineCommandRequest command;
-            while (_commands.TryTake(out command)) // we can set up a maximum but really we should accept all
+
+            TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] ProcessCommandsQueue - Before with trying to take.");
+            while (_commands.TryTake(out command, 10)) // we can set up a maximum but really we should accept all
             {
+                TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] ProcessCommandsQueue - Got an item.");
                 entries.Add(new LogEntry()
                 {
                     Body = command.Command,
@@ -181,14 +185,18 @@ namespace Avalon.Raft.Core.Rpc
                 });
             }
 
+            
             if (entries.Any())
             {
+                TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] ProcessCommandsQueue - Before applying {entries.Count} entries.");
                 _logPersister.Append(entries.ToArray());
-                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] His Majesty appended {entries.Count} entries.");
+                TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] ProcessCommandsQueue - His Majesty appended {entries.Count} entries.");
             }
+
 
             return Task.CompletedTask;
         }
+
         private Task HeartBeatReceive(CancellationToken c)
         {
             var millis = new Random().Next((int)_settings.ElectionTimeoutMin.TotalMilliseconds, (int)_settings.ElectionTimeoutMax.TotalMilliseconds + 1);
@@ -309,8 +317,10 @@ namespace Avalon.Raft.Core.Rpc
             var lastApplied = _volatileState.LastApplied;
 
             // NOTE: if snapshotting, it should not commit anything
-            if (!_isSnapshotting && commitIndex > lastApplied && _workers.IsEmpty(Queues.LogCommit)) // check ONLY if empty. NO RE-ENTRY
+            if (!_isSnapshotting && commitIndex > lastApplied)
             {
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Applying to the state maquina {commitIndex - lastApplied} entries");
+
                 // TODO: ADD BATCHING LATER
                 await _stateMachine.ApplyAsync(
                     _logPersister.GetEntries(lastApplied + 1, (int)(commitIndex - lastApplied))
@@ -320,7 +330,6 @@ namespace Avalon.Raft.Core.Rpc
                 _volatileState.LastApplied = commitIndex;
             }
         }
-
 
         private async Task CreateSnapshot(CancellationToken c)
         {
@@ -339,18 +348,24 @@ namespace Avalon.Raft.Core.Rpc
                 return; // no work
 
             _isSnapshotting = true;
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
-            var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex, term);
-            await _stateMachine.WriteSnapshotAsync(stream);
-            stream.Close();
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created snapshot for safeIndex {safeIndex}");
-            _snapshotOperator.FinaliseSnapshot(safeIndex, term); // this changes LogOffset
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully finalised snapshot for safeIndex {safeIndex}");
-            _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully applied snapshot for safeIndex {safeIndex}");
-            _snapshotOperator.CleanSnapshots();
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");
-            _isSnapshotting = false;
+            try
+            {
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Considering snapshotting. SafeIndex: {safeIndex} | LogOffset: {_logPersister.LogOffset}");
+                var stream = _snapshotOperator.GetNextSnapshotStream(safeIndex, term);
+                await _stateMachine.WriteSnapshotAsync(stream);
+                stream.Close();
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created snapshot for safeIndex {safeIndex}");
+                _snapshotOperator.FinaliseSnapshot(safeIndex, term); // this changes LogOffset
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully finalised snapshot for safeIndex {safeIndex}");
+                _logPersister.ApplySnapshot(safeIndex + 1); // if this fails then next time it will be cleaned
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully applied snapshot for safeIndex {safeIndex}");
+                _snapshotOperator.CleanSnapshots();
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");
+            }
+            finally
+            {
+                _isSnapshotting = false;            
+            }
         }
 
         private Func<CancellationToken, Task> PeerAppendLog(Peer peer)
@@ -378,6 +393,7 @@ namespace Avalon.Raft.Core.Rpc
 
                 if (nextIndex > myLastIndex)
                 {
+                    TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] PeerAppendLog - Nothing to do for peer {peer.ShortName} since myIndex is {myLastIndex} and nextIndex is {nextIndex}.");
                     return Task.CompletedTask; // nothing to do
                 }
 
@@ -388,12 +404,12 @@ namespace Avalon.Raft.Core.Rpc
 
                 if (nextIndex >= _logPersister.LogOffset)
                 {
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendLog for peer {peer.Address} with nextIndex {nextIndex} and count {count}.");
+                    TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] Intending to do SendLog for peer {peer.Address} with nextIndex {nextIndex} and count {count}.");
                     return SendLogs(proxy, policy, peer, nextIndex, matchIndex, count);
                 }
                 else
                 {
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Intending to do SendSnapshot for peer {peer.Address}.");
+                    TheTrace.TraceVerbose($"[{_meAsAPeer.ShortName}] Intending to do SendSnapshot for peer {peer.Address}.");
                     return SendSnapshot(proxy, policy, peer, nextIndex, matchIndex);
                 }
             };
@@ -465,7 +481,18 @@ namespace Avalon.Raft.Core.Rpc
         {
             var previousIndexTerm = -1L;
             if (nextIndex > 0)
-                previousIndexTerm = _logPersister.GetEntries(nextIndex - 1, 1).First().Term;
+            {
+                if (nextIndex > _logPersister.LogOffset)
+                {
+                    previousIndexTerm = _logPersister.GetEntries(nextIndex-1, 1).First().Term;
+                }
+                else
+                {
+                    Snapshot ss;
+                    if (_snapshotOperator.TryGetLastSnapshot(out ss))
+                        previousIndexTerm = ss.LastIncludedTerm;
+                }
+            }
 
             var request = new AppendEntriesRequest()
             {
@@ -538,6 +565,12 @@ namespace Avalon.Raft.Core.Rpc
         public Task<AppendEntriesResponse> AppendEntriesAsync(AppendEntriesRequest request)
         {
             _lastHeartbeat.Set();
+
+            if (request.Entries != null && request.Entries.Length > 0)
+            {
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Received the dough {request.Entries.Length} for position after {request.PreviousLogIndex}");
+            }
+
             string message = null;
             lock(State)
             {
@@ -568,6 +601,8 @@ namespace Avalon.Raft.Core.Rpc
 
             if (request.PreviousLogIndex < _logPersister.LastIndex)
             {
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Position for PreviousLogIndex {request.PreviousLogIndex} but my LastIndex {_logPersister.LastIndex}");
+                
                 // Reply false if log doesn’t contain an entry at prevLogIndex whose term matches prevLogTerm(§5.3)
                 var entry = _logPersister.GetEntries(request.PreviousLogIndex, 1).First();
                 if (entry.Term != request.CurrentTerm)
@@ -681,6 +716,7 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public Task<StateMachineCommandResponse> ApplyCommandAsync(StateMachineCommandRequest command)
         {
+
             if (Role == Role.Leader)
             {
                 _commands.TryAdd(command);
@@ -712,6 +748,7 @@ namespace Avalon.Raft.Core.Rpc
 
         protected void OnRoleChanged(Role role)
         {
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Role changed to {role}");
             _commands = new BlockingCollection<StateMachineCommandRequest>(); // reset commands
             RoleChanged?.Invoke(this, new RoleChangedEventArgs(role));
         }
@@ -759,6 +796,8 @@ namespace Avalon.Raft.Core.Rpc
             foreach (var w in _workers.GetWorkers(Queues.PeerAppendLog))
                 w.Start();
 
+            _workers.GetWorkers(Queues.ProcessCommandQueue).Single().Start();
+
             foreach (var p in peers)
             {
                 var localP = p;
@@ -771,12 +810,21 @@ namespace Avalon.Raft.Core.Rpc
                     TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                     TimeSpan.FromMilliseconds(30)));
             }
+
+            // Applying commands received from the clients 
+            Func<CancellationToken, Task> pcq = ProcessCommandsQueue;
+            _workers.Enqueue(Queues.ProcessCommandQueue,
+                new Job(pcq,
+                TheTrace.LogPolicy().RetryForeverAsync(),
+                _settings.ElectionTimeoutMin.Multiply(0.2)));
+
         }
 
         private void DestroyPeerAppendLogJobs()
         {
             foreach (var w in _workers.GetWorkers(Queues.PeerAppendLog))
                 w.Stop();
+            _workers.GetWorkers(Queues.ProcessCommandQueue).Single().Stop();
         }
 
         #endregion

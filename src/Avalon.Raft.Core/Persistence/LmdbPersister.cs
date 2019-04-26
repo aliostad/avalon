@@ -191,7 +191,6 @@ namespace Avalon.Raft.Core.Persistence
                 }
 
                 LoadLastTermAndIndex();
-
             }
         }
 
@@ -278,7 +277,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public void Save(PersistentState state)
         {
-            lock (_lock) // TODO: unnecessary probably
+            lock (_state) // TODO: unnecessary probably
             {
                 using (var tx = _env.BeginTransaction())
                 {
@@ -300,7 +299,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public void SaveLastVotedFor(Guid? id)
         {
-            lock (_lock) // TODO: unnecessary probably
+            lock (_state)
             {
                 using (var tx = _env.BeginTransaction())
                 {
@@ -357,7 +356,7 @@ namespace Avalon.Raft.Core.Persistence
         /// <inheritdocs/>
         public void SaveTerm(long newTerm)
         {
-            lock (_lock) // TODO: unnecessary probably
+            lock (_state)
             {
                 using (var tx = _env.BeginTransaction())
                 {

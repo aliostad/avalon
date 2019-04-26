@@ -67,6 +67,8 @@ namespace Avalon.Raft.Core.Integration
                             });
 
                         }
+
+                        TheTrace.TraceInformation("Sent commands");
                     }
                     catch (Exception e)
                     {
@@ -85,7 +87,9 @@ namespace Avalon.Raft.Core.Integration
                 Directory.CreateDirectory(rootPath);
 
             var logFileName = Path.Combine(rootPath, "log.txt");
-            _log = new StreamWriter(logFileName);
+            _log = new StreamWriter(logFileName) {
+                AutoFlush = true
+            };
 
             TheTrace.Tracer = (level, s, data) =>
             {
@@ -113,14 +117,16 @@ namespace Avalon.Raft.Core.Integration
         {
             Console.Clear();
             Console.WriteLine($"Run {_run}");
+            Console.WriteLine("adrs\tname\trole\tterm\tLI\tCI\tqueue\tview");
             foreach (var address in _cluster.Nodes.Keys.OrderBy(x => x))
             {
                 var peer = _cluster.Peers[address];
                 var server = _cluster.Nodes[address];
                 var message =
-                $"{address} ({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}\t";
+                $"{address}\t({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}\t";
                 if (server.Role == Role.Leader)
                 {
+                    message += $"{server.Commands.Count}\t";
                     foreach (var kv in server.VolatileLeaderState.NextIndices)
                     {
                         var shortName = _cluster.Peers.Values.Where(x => x.Id == kv.Key).Single().ShortName;

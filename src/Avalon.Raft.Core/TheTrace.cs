@@ -47,6 +47,10 @@ namespace Avalon.Raft.Core
                 return string.Format(messageOrFormat, parameters);
         }
 
+        /// <summary>
+        /// Note: Wraps the given in a filter which honours the static Level property
+        /// </summary>
+        /// <value></value>
         public static Action<TraceLevel, string, object[]> Tracer
         {
             get
@@ -55,9 +59,17 @@ namespace Avalon.Raft.Core
             }
             set
             {
-                _tracer = value ?? throw new ArgumentNullException("value");
+                if (value == null)
+                    throw new ArgumentNullException("value");
+
+                _tracer = (l, s, os) => {
+                    if (l <= Level)
+                        value(l, s, os);
+                };
             }
         }
+
+        public static TraceLevel Level {get; set;} = TraceLevel.Verbose;
 
         public static void TraceError(string message)
         {
@@ -72,6 +84,11 @@ namespace Avalon.Raft.Core
         public static void TraceInformation(string message)
         {
             Tracer(TraceLevel.Info, message, new string[0]);
+        }
+
+        public static void TraceVerbose(string message)
+        {
+            Tracer(TraceLevel.Verbose, message, new string[0]);
         }
 
         public static void TraceError(string message, params object[] parameters)
