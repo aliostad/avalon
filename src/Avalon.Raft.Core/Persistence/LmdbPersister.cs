@@ -124,6 +124,8 @@ namespace Avalon.Raft.Core.Persistence
             TheTrace.TraceInformation($"Seed Id was {seedId} and now {_state.Id}");
         }
 
+        internal string Name {get; set;} = Guid.NewGuid().ToString("N").Substring(0, 4);
+
         /// <inheritdocs/>
         public long LogOffset { get; private set; } = 0;
 
@@ -142,21 +144,29 @@ namespace Avalon.Raft.Core.Persistence
             if (entries.Length == 0)
                 throw new InvalidOperationException("Entries is empty.");
 
+            TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - Before Lock");
             lock (_lock)
             {
                 startingOffset = LastIndex + 1;
+                TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - Inside Lock. Entries: {entries.Length}. startingOffset: {startingOffset}");
                 var indices = Enumerable.Range(0, entries.Length).Select(x => x + startingOffset);
+                TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - Before tx");
                 using (var tx = _env.BeginTransaction())
                 {
+                    TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - After tx");
                     foreach (var e in entries.Zip(indices, (l, i) => (i, l)).Select(x => new Bufferable(x.l.Body).PrefixWithIndexAndTerm(x.i.Value, x.l.Term)))
                     {
+                        TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - Before put");
                         tx.Put(_logDb, LogKey, e, TransactionPutOptions.AppendDuplicateData);
+                        TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - After Put");
                     }
 
                     tx.Commit();
                 }
 
+                TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - Before LoadLastTermAndIndex");
                 LoadLastTermAndIndex();
+                TheTrace.TraceVerbose($"[{Name}] LmdbPersister.Append - After LoadLastTermAndIndex");
                 if (LastIndex != startingOffset + entries.Length - 1)
                 {
                     throw new InvalidOperationException($"THIS IS BAD!! expected {startingOffset} + {entries.Length} but found {LastIndex}.");
@@ -263,6 +273,7 @@ namespace Avalon.Raft.Core.Persistence
             using (var tx = _env.BeginTransaction())
             {
                 tx.DeleteUpToValue(_logDb, LogKey, index);
+                tx.Commit();
             }
         }
 

@@ -44,6 +44,7 @@ namespace Avalon.Raft.Core.Integration
                 if (Console.KeyAvailable)
                     stop = true;
 
+                _run = -1;
                 _cluster.Dispose();
                 _log.Close();
             }
@@ -103,6 +104,8 @@ namespace Avalon.Raft.Core.Integration
                     _log.WriteLine($"{DateTimeOffset.Now.ToString("yyyy-MM-ddTHH:mm:ss.fff")} {message}");
                 }
             };
+
+            TheTrace.Level = TraceLevel.Info;
 
             _cluster = new Cluster(new ClusterSettings()
             {

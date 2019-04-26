@@ -72,7 +72,7 @@ namespace Avalon.Raft.Core.Integration
             foreach (var address in _addresses)
             {
                 TheTrace.TraceInformation($"Setting up {address} ({_peers[address].ShortName}) {_peers[address].Id}");
-                var lp = new LmdbPersister(_folders[address], seedId: _peers[address].Id);
+                var lp = new LmdbPersister(_folders[address], seedId: _peers[address].Id) {Name = _peers[address].ShortName};
                 var peers = _peers.Where(x => x.Key != address).Select(x => x.Value).ToArray();
                 foreach (var p in peers)
                 {

@@ -106,6 +106,11 @@ namespace Avalon.Raft.Core
             Tracer(TraceLevel.Info, message, parameters);
         }
 
+        public static void TraceVerbose(string message, params object[] parameters)
+        {
+            Tracer(TraceLevel.Verbose, message, parameters);
+        }
+
         public static bool HandleException(Exception e, string extraInfo = null)
         {
             TraceWarning("{0}Handling exception: {1}", extraInfo ?? string.Empty, e);
