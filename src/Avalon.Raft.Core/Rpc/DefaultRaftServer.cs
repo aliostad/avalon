@@ -8,6 +8,7 @@ using Polly;
 using System.Collections.Concurrent;
 using System.IO;
 using System.Threading;
+using Avalon.Raft.Core.Chaos;
 
 namespace Avalon.Raft.Core.Rpc
 {
@@ -36,6 +37,7 @@ namespace Avalon.Raft.Core.Rpc
         protected readonly IPeerManager _peerManager;
         protected readonly RaftServerSettings _settings;
         protected readonly Peer _meAsAPeer;
+        protected readonly IChaos _chaos;
         protected int _candidateVotes;
         protected WorkerPool _workers;
         protected readonly AutoPersistentState _state;
@@ -95,7 +97,8 @@ namespace Avalon.Raft.Core.Rpc
             IStateMachine stateMachine,
             IPeerManager peerManager,
             RaftServerSettings settings,
-            Peer meAsAPeer = null)
+            Peer meAsAPeer = null,
+            IChaos chaos = null)
         {
             _logPersister = logPersister;
             _peerManager = peerManager;
@@ -104,6 +107,7 @@ namespace Avalon.Raft.Core.Rpc
             _settings = settings;
             _state = new AutoPersistentState(statePersister);
             _meAsAPeer = meAsAPeer ?? new Peer("NoAddress", State.Id);
+            _chaos = chaos ?? new NoChaos();
         }
 
         public void Start()
@@ -132,28 +136,28 @@ namespace Avalon.Raft.Core.Rpc
             Func<CancellationToken, Task> logCommit = LogCommit;
             _workers.Enqueue(Queues.LogCommit,
                 new Job(logCommit,
-                TheTrace.LogPolicy().RetryForeverAsync(),
+                TheTrace.LogPolicy(_meAsAPeer.ShortName).RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // receiving heartbeat
             Func<CancellationToken, Task> hbr = HeartBeatReceive;
             _workers.Enqueue(Queues.HeartBeatReceiveAndCandidacy,
                 new Job(hbr,
-                TheTrace.LogPolicy().RetryForeverAsync(),
+                TheTrace.LogPolicy(_meAsAPeer.ShortName).RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // sending heartbeat
             Func<CancellationToken, Task> hbs = HeartBeatSend;
             _workers.Enqueue(Queues.HeartBeatSend,
                 new Job(hbs,
-                TheTrace.LogPolicy().RetryForeverAsync(),
+                TheTrace.LogPolicy(_meAsAPeer.ShortName).RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             // Applying commands received from the clients
             Func<CancellationToken, Task> cs = CreateSnapshot;
             _workers.Enqueue(Queues.CreateSnapshot,
                 new Job(cs,
-                TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
+                TheTrace.LogPolicy(_meAsAPeer.ShortName).WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
             TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Setup finished.");
@@ -233,7 +237,7 @@ namespace Avalon.Raft.Core.Rpc
 
             var peers = _peerManager.GetPeers().ToArray();
             var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
-            var retry = TheTrace.LogPolicy().RetryForeverAsync();
+            var retry = TheTrace.LogPolicy(_meAsAPeer.ShortName).RetryForeverAsync();
             var policy = Policy.TimeoutAsync(_settings.ElectionTimeoutMin.Multiply(0.2)).WrapAsync(retry);
             var all = await Task.WhenAll(proxies.Select(p => policy.ExecuteAndCaptureAsync(() => p.AppendEntriesAsync(req))));
             var maxTerm = currentTerm;
@@ -267,7 +271,7 @@ namespace Avalon.Raft.Core.Rpc
                 var peers = _peerManager.GetPeers().ToArray();
                 var concensus = (peers.Length / 2) + 1;
                 var proxies = peers.Select(x => _peerManager.GetProxy(x.Address));
-                var retry = TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 30));
+                var retry = TheTrace.LogPolicy(_meAsAPeer.ShortName).WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 30));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry);
                 var request = new RequestVoteRequest()
                 {
@@ -399,7 +403,7 @@ namespace Avalon.Raft.Core.Rpc
 
                 var count = (int)Math.Min(_settings.MaxNumberLogEntriesToAskToBeAppended, myLastIndex + 1 - nextIndex);
                 var proxy = _peerManager.GetProxy(peer.Address);
-                var retry = TheTrace.LogPolicy().WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(20));
+                var retry = TheTrace.LogPolicy(_meAsAPeer.ShortName).WaitAndRetryAsync(2, (i) => TimeSpan.FromMilliseconds(20));
                 var policy = Policy.TimeoutAsync(_settings.CandidacyTimeout).WrapAsync(retry); // TODO: create its own timeout
 
                 if (nextIndex >= _logPersister.LogOffset)
@@ -571,6 +575,8 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Received the dough {request.Entries.Length} for position after {request.PreviousLogIndex}");
             }
 
+            _chaos.WreakHavoc();
+            
             string message = null;
             lock(State)
             {
@@ -648,34 +654,33 @@ namespace Avalon.Raft.Core.Rpc
                     BecomeFollower(request.CurrentTerm);
             }
 
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before write ss {request.LastIncludedIndex} ");            
-            _snapshotOperator.WriteLeaderSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
-            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - After write ss {request.LastIncludedIndex} ");          
-
-            if (request.IsDone)
+            try
             {
-                try
+                _isSnapshotting = true;
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before write ss {request.LastIncludedIndex} ");            
+                _snapshotOperator.WriteLeaderSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - After write ss {request.LastIncludedIndex} ");          
+
+                if (request.IsDone)
                 {
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before finalise ss {request.LastIncludedIndex} ");                       
-                    _snapshotOperator.FinaliseSnapshot(request.LastIncludedIndex, request.LastIncludedTerm);
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before apply ss {request.LastIncludedIndex} ");                                    
                     _logPersister.ApplySnapshot(request.LastIncludedIndex + 1);
                     Snapshot ss;
-                    if (!_snapshotOperator.TryGetLastSnapshot(out ss) || ss.LastIncludedIndex != request.LastIncludedIndex);
+                    if (!_snapshotOperator.TryGetLastSnapshot(out ss) || ss.LastIncludedIndex != request.LastIncludedIndex)
                         throw new InvalidOperationException($"Where did this finalised snapshot with index {request.LastIncludedIndex} go??");
                     
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                   
                     await _stateMachine.RebuildFromSnapshotAsync(ss);
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                      
-                    _isSnapshotting = true;
+               
                 }
-                finally
-                {
-                    _isSnapshotting = false;
-                }
-            }
 
-            return new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm };
+                return new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm };
+            }
+            finally
+            {
+                _isSnapshotting = false;
+            }
         }
 
         /// <inheritdoc />
@@ -823,7 +828,7 @@ namespace Avalon.Raft.Core.Rpc
 
                 _workers.Enqueue(q,
                     new Job(todo,
-                    TheTrace.LogPolicy().WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
+                    TheTrace.LogPolicy(_meAsAPeer.ShortName).WaitAndRetryAsync(3, (i) => TimeSpan.FromMilliseconds(i * i * 50)),
                     TimeSpan.FromMilliseconds(30)));
             }
 
@@ -831,7 +836,7 @@ namespace Avalon.Raft.Core.Rpc
             Func<CancellationToken, Task> pcq = ProcessCommandsQueue;
             _workers.Enqueue(Queues.ProcessCommandQueue,
                 new Job(pcq,
-                TheTrace.LogPolicy().RetryForeverAsync(),
+                TheTrace.LogPolicy(_meAsAPeer.ShortName).RetryForeverAsync(),
                 _settings.ElectionTimeoutMin.Multiply(0.2)));
 
         }

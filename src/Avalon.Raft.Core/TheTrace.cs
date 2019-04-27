@@ -117,9 +117,9 @@ namespace Avalon.Raft.Core
             return true;
         }
 
-        public static PolicyBuilder LogPolicy()
+        public static PolicyBuilder LogPolicy(string name)
         {
-            return Policy.Handle<Exception>((e) => HandleException(e, "(Polly/Try/Retry) "));
+            return Policy.Handle<Exception>((e) => HandleException(e, $"[{name}] (Polly/Try/Retry) "));
         }
     }
 

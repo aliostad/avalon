@@ -20,7 +20,7 @@ namespace Avalon.Raft.Core.Tests
             var ran = false;
 
             var job = new Job<int>(c => Task.FromResult(2 + 2),
-               TheTrace.LogPolicy().RetryForeverAsync(), (n) => { ran = true; });
+               TheTrace.LogPolicy("this").RetryForeverAsync(), (n) => { ran = true; });
 
             maths.Start();
             maths.Enqueue(job);
@@ -41,7 +41,7 @@ namespace Avalon.Raft.Core.Tests
                 ran = true;
                 return Task.FromResult(2 + 2);
             },
-               TheTrace.LogPolicy().RetryForeverAsync()
+               TheTrace.LogPolicy("this").RetryForeverAsync()
             );
 
             maths.Start();
@@ -62,7 +62,7 @@ namespace Avalon.Raft.Core.Tests
                 ran++;
                 return Task.FromResult(2 + 2);
             },
-                TheTrace.LogPolicy()
+                TheTrace.LogPolicy("this")
                 .RetryForeverAsync()
             );
 

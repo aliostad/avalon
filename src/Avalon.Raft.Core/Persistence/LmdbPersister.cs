@@ -264,7 +264,6 @@ namespace Avalon.Raft.Core.Persistence
             {
                 var newOffset = lastIncludedIndex + 1;
                 FinaliseSnapshot(lastIncludedIndex, lastTerm);
-                TruncateLogUpToIndex(newOffset);
             }
         }
 
