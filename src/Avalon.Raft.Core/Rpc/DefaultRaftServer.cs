@@ -442,7 +442,7 @@ namespace Avalon.Raft.Core.Rpc
                 var total = 0;
                 var length = fs.Length;
                 var buffer = new byte[_settings.MaxSnapshotChunkSentInBytes];
-                TheTrace.TraceInformation($"S[{_meAsAPeer.ShortName}] napshot copy file size is {length}. Location is {fileName} and copy of {ss.FullName}.");
+                TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Snapshot copy file size is {length}. Location is {fileName} and copy of {ss.FullName}.");
                 while (total < length)
                 {
                     var count = fs.Read(buffer, 0, buffer.Length);
@@ -641,22 +641,38 @@ namespace Avalon.Raft.Core.Rpc
         /// <inheritdoc />
         public async Task<InstallSnapshotResponse> InstallSnapshotAsync(InstallSnapshotRequest request)
         {
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - was asked to install snapshot {request.LastIncludedIndex} from {request.Offset} offset and isDone={request.IsDone}");
             lock (State)
             {
                 if (request.CurrentTerm > State.CurrentTerm)
                     BecomeFollower(request.CurrentTerm);
             }
 
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before write ss {request.LastIncludedIndex} ");            
             _snapshotOperator.WriteLeaderSnapshot(request.LastIncludedIndex, request.LastIncludedTerm, request.Data, request.Offset, request.IsDone);
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - After write ss {request.LastIncludedIndex} ");          
 
             if (request.IsDone)
             {
-                _snapshotOperator.FinaliseSnapshot(request.LastIncludedIndex, request.LastIncludedTerm);
-                _logPersister.ApplySnapshot(request.LastIncludedIndex + 1);
-                Snapshot ss;
-                if (!_snapshotOperator.TryGetLastSnapshot(out ss) || ss.LastIncludedIndex != request.LastIncludedIndex)
-                    throw new InvalidOperationException($"Where did this finalised snapshot with index {request.LastIncludedIndex} go??");
-                await _stateMachine.RebuildFromSnapshotAsync(ss);
+                try
+                {
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before finalise ss {request.LastIncludedIndex} ");                       
+                    _snapshotOperator.FinaliseSnapshot(request.LastIncludedIndex, request.LastIncludedTerm);
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before apply ss {request.LastIncludedIndex} ");                                    
+                    _logPersister.ApplySnapshot(request.LastIncludedIndex + 1);
+                    Snapshot ss;
+                    if (!_snapshotOperator.TryGetLastSnapshot(out ss) || ss.LastIncludedIndex != request.LastIncludedIndex);
+                        throw new InvalidOperationException($"Where did this finalised snapshot with index {request.LastIncludedIndex} go??");
+                    
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                   
+                    await _stateMachine.RebuildFromSnapshotAsync(ss);
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                      
+                    _isSnapshotting = true;
+                }
+                finally
+                {
+                    _isSnapshotting = false;
+                }
             }
 
             return new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm };
