@@ -42,9 +42,11 @@ namespace Avalon.Raft.Core.Integration
                 }
 
                 if (Console.KeyAvailable)
+                {
+                    _run = -1;
                     stop = true;
+                }
 
-                _run = -1;
                 _cluster.Dispose();
                 _log.Close();
             }
