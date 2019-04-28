@@ -5,6 +5,7 @@ using System.IO;
 using Avalon.Raft.Core.Rpc;
 using Avalon.Raft.Core.Persistence;
 using System.Threading.Tasks;
+using Avalon.Raft.Core.Chaos;
 
 namespace Avalon.Raft.Core.Integration
 {
@@ -82,7 +83,8 @@ namespace Avalon.Raft.Core.Integration
                 TheTrace.TraceInformation("___________________________________________________________________________");
                 var peerManager = new PeerManager(peers, _nodes);
                 var node = new DefaultRaftServer(lp, lp, lp,
-                    new SimpleDictionaryStateMachine(), peerManager, _settings, _peers[address]);
+                    new SimpleDictionaryStateMachine(), peerManager, _settings, _peers[address], chaos: 
+                        new SimpleChaos(TimeSpan.FromMilliseconds(200), exceptionProbability: 0.0));
                 _nodes.Add(address, node);
             }
         }

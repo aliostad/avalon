@@ -122,13 +122,14 @@ namespace Avalon.Raft.Core.Integration
         {
             Console.Clear();
             Console.WriteLine($"Run {_run}");
-            Console.WriteLine("adrs\tname\trole\tterm\tLI\tCI\tqueue\tview");
+            Console.WriteLine("adrs\tname\trole\tterm\tLI\tCI\tSC\tSI\tqueue\tview");
             foreach (var address in _cluster.Nodes.Keys.OrderBy(x => x))
             {
                 var peer = _cluster.Peers[address];
                 var server = _cluster.Nodes[address];
                 var message =
-                $"{address}\t({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}\t";
+                $"{address}\t({peer.ShortName})\t{server.Role.ToString()[0]}\t{server.State.CurrentTerm}\t" + 
+                    $"{server.LogPersister.LastIndex}\t{server.VolatileState.CommitIndex}\t{server.SuccessfulSnapshotCreations}\t{server.SuccessfulSnapshotInstallations}\t";
                 if (server.Role == Role.Leader)
                 {
                     message += $"{server.Commands.Count}\t";

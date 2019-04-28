@@ -59,6 +59,9 @@ namespace Avalon.Raft.Core.Rpc
 
         internal BlockingCollection<StateMachineCommandRequest> Commands => _commands;
 
+        internal int SuccessfulSnapshotCreations {get; set;}
+        internal int SuccessfulSnapshotInstallations {get; set;}
+
         #endregion
 
         public Role Role => _role;
@@ -365,6 +368,8 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully applied snapshot for safeIndex {safeIndex}");
                 _snapshotOperator.CleanSnapshots();
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Successfully created and applied snapshot for SafeIndex: {safeIndex}");
+
+                SuccessfulSnapshotCreations++;
             }
             finally
             {
@@ -575,8 +580,7 @@ namespace Avalon.Raft.Core.Rpc
                 TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] Received the dough {request.Entries.Length} for position after {request.PreviousLogIndex}");
             }
 
-            _chaos.WreakHavoc();
-            
+
             string message = null;
             lock(State)
             {
@@ -597,6 +601,9 @@ namespace Avalon.Raft.Core.Rpc
                 _leaderAddress = _peerManager.GetPeers().Where(x => x.Id == request.LeaderId).FirstOrDefault()?.Address;
                 return Task.FromResult(new AppendEntriesResponse(State.CurrentTerm, true));
             }
+
+            // chaos only when has entries
+            _chaos.WreakHavoc();
 
             if (request.PreviousLogIndex > _logPersister.LastIndex)
             {
@@ -672,7 +679,8 @@ namespace Avalon.Raft.Core.Rpc
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                   
                     await _stateMachine.RebuildFromSnapshotAsync(ss);
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                      
-               
+                    
+                    SuccessfulSnapshotInstallations++;
                 }
 
                 return new InstallSnapshotResponse() { CurrentTerm = State.CurrentTerm };

@@ -20,9 +20,9 @@ namespace Avalon.Raft.Core.Integration
                 var key = BitConverter.ToInt32(command, 0);
                 var value = BitConverter.ToInt32(command, sizeof(int));
                 
+                _lock.EnterReadLock();
                 try
                 {
-                    _lock.EnterReadLock();
                     _state.AddOrUpdate(key, value, (k,v) => value);
                 }
                 finally
@@ -36,9 +36,9 @@ namespace Avalon.Raft.Core.Integration
 
         public async Task RebuildFromSnapshotAsync(Snapshot snapshot)
         {
+            _lock.EnterWriteLock();
             try
             {
-                _lock.EnterWriteLock();
                 // make a copy
                 var newFileName = Path.GetTempFileName();
                 File.Copy(snapshot.FullName, newFileName, true);
@@ -46,7 +46,7 @@ namespace Avalon.Raft.Core.Integration
                 var length = 0;
                 var buffer = new byte[sizeof(int) * 2];
                 _state = new ConcurrentDictionary<int, int>();
-                while ((length = await fs.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                while ((length = fs.Read(buffer, 0, buffer.Length)) > 0)
                 {
                     if (length != buffer.Length)
                         throw new InvalidDataException($"Could not read {buffer.Length} bytes from snapshot {snapshot.FullName}");
@@ -67,9 +67,9 @@ namespace Avalon.Raft.Core.Integration
 
         public Task WriteSnapshotAsync(Stream stream)
         {
+            _lock.EnterWriteLock();
             try
             {
-                _lock.EnterWriteLock();
                 foreach (var k in _state.Keys)
                 {
                     stream.Write(BitConverter.GetBytes(k), 0, sizeof(int));
