@@ -393,6 +393,8 @@ namespace Avalon.Raft.Core.Persistence
             if (newFirstIndex != LogOffset)
                 throw new InvalidOperationException($"Expecting newFirstIndex to be as LogOffset+1 ({LogOffset}+1) but was {newFirstIndex}");
             TruncateLogUpToIndex(newFirstIndex);
+            if (LastIndex < newFirstIndex)
+                LastIndex = newFirstIndex - 1; // IMPORTANTE!!!
         }
     }
 }

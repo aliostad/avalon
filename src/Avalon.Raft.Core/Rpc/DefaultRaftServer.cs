@@ -679,7 +679,8 @@ namespace Avalon.Raft.Core.Rpc
                     
                     TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                   
                     await _stateMachine.RebuildFromSnapshotAsync(ss);
-                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - before RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                      
+                    _volatileState.LastApplied = ss.LastIncludedIndex; // IMPORTANTE !!
+                    TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] InstallSnapshotAsync - after RebuildFromSnapshotAsync ss {request.LastIncludedIndex} ");                      
                     
                     SuccessfulSnapshotInstallations++;
                 }
