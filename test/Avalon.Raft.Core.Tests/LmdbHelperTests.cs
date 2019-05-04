@@ -223,6 +223,36 @@ namespace Avalon.Raft.Core.Tests
             }
         }
 
+        [Fact]
+        public void CanDeleteUpToMoreThanLast()
+        {
+            var key = 42L;
+            var value = Guid.NewGuid();
+            var total = 1000L;
+            var upto = 10010L;
+
+            using (var db = _env.OpenDatabase(DatabaseName, new DatabaseConfig(DbFlags.Create | DbFlags.DuplicatesSort) { DupSortPrefix = 64 }))
+            {
+                using (var tx = _env.BeginTransaction())
+                {
+                    for (long i = 0; i < total; i++)
+                    {
+                        tx.Put(db, key, new Bufferable(i, value), TransactionPutOptions.AppendDuplicateData);
+                    }
+                   
+                    tx.Commit();
+                }
+
+                Assert.Equal(total, db.GetEntriesCount());
+
+                using (var tx2 = _env.BeginTransaction())
+                {
+                    Assert.True(tx2.DeleteUpToValue(db, key, upto));
+                    tx2.Commit();
+                }
+            }
+        }
+
         public void Dispose()
         {
             try

@@ -271,8 +271,17 @@ namespace Avalon.Raft.Core.Persistence
         {
             using (var tx = _env.BeginTransaction())
             {
-                tx.DeleteUpToValue(_logDb, LogKey, index);
-                tx.Commit();
+                try
+                {
+                    tx.DeleteUpToValue(_logDb, LogKey, index);
+                    tx.Commit();                }
+                catch
+                {
+                    TheTrace.TraceError($"TruncateLogUpToIndex failed for index {index} when last index was {this.LastIndex}");
+                    tx.Abort();
+                    throw;
+                }
+
             }
         }
 

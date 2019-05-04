@@ -443,7 +443,8 @@ namespace Avalon.Raft.Core.Rpc
             // make a copy since it might be cleaned up or opened by another thread for another client
             var fileName = Path.GetTempFileName();
             File.Copy(ss.FullName, fileName, true);
-
+            
+            TheTrace.TraceInformation($"[{_meAsAPeer.ShortName}] About to send Snapshot copy file {fileName} to [{peer.ShortName}] and copy of {ss.FullName}.");
 
             using (var fs = new FileStream(fileName, FileMode.Open))
             {

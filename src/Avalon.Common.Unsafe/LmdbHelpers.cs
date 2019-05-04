@@ -3,6 +3,7 @@ using Spreads.Buffers;
 using Spreads;
 using System.Runtime.CompilerServices;
 using System;
+using Avalon.Raft.Core.Persistence;
 
 namespace Avalon.Common
 {
@@ -66,27 +67,38 @@ namespace Avalon.Common
         /// <returns></returns>
         public static unsafe bool DeleteUpToValue(this Transaction tx, Database db, long key, long value, long firstValue = 0L)
         {
+            int deletedCount = 0;
             using (var c = db.OpenCursor(tx))
             {
-                byte* keyptr = (byte*) Unsafe.AsPointer(ref key);
-                byte* valptr = (byte*) Unsafe.AsPointer(ref value);
-                byte* firstvalptr = (byte*) Unsafe.AsPointer(ref firstValue);
-                var keydb = new DirectBuffer(sizeof(long), keyptr);
-                var valdb = new DirectBuffer(sizeof(long), firstvalptr);
-                c.TryFindDup(Lookup.EQ, ref keydb, ref valdb);
-
-                while (c.Delete(false))
+                try
                 {
-                    if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetBothRange) || valdb.IsEmpty)
-                        break; // empty now
+                    byte* keyptr = (byte*) Unsafe.AsPointer(ref key);
+                    byte* valptr = (byte*) Unsafe.AsPointer(ref value);
+                    byte* firstvalptr = (byte*) Unsafe.AsPointer(ref firstValue);
+                    var keydb = new DirectBuffer(sizeof(long), keyptr);
+                    var valdb = new DirectBuffer(sizeof(long), firstvalptr);
+                     c.TryFindDup(Lookup.LE, ref keydb, ref valdb);
 
-                    var currentValue = valdb.ReadInt64(0);
-                    if (currentValue == value)
-                        break;
+                    while (c.Delete(false))
+                    {
+                        deletedCount++;
+                        if(!c.TryGet(ref keydb, ref valdb, CursorGetOption.GetBothRange) || valdb.IsEmpty)
+                            break; // empty now
 
+                        var currentValue = valdb.ReadInt64(0);
+                        if (currentValue == value)
+                            break;
+
+                    }
+
+                    return true;
                 }
-
-                return true;
+                catch(Exception e)
+                {
+                    throw new DeleteUpToException(
+                        $"Failed after deleting {deletedCount} records."
+                        , e);
+                }
             }
         }
     }
